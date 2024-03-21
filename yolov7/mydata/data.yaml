@@ -1,0 +1,9 @@
+
+train: ../yolov7/mydata/train/images
+val: ../yolov7/mydata/val/images
+test: ../yolov7/mydata/test/images
+
+# Classes
+nc: 11
+names: ['biker', 'car', 'pedestrian', 'trafficLight', 'trafficLight-Green', 'trafficLight-GreenLeft', 'trafficLight-Red',
+          'trafficLight-RedLeft', 'trafficLight-Yellow', 'trafficLight-YellowLeft', 'truck']
