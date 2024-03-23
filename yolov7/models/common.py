@@ -18,6 +18,9 @@ from utils.plots import color_list, plot_one_box
 from utils.torch_utils import time_synchronized
 
 
+from models.QARepVGG import QARepNeXt
+from models.c3 import C3
+
 ##### basic ####
 
 def autopad(k, p=None):  # kernel, padding

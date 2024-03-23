@@ -17,7 +17,6 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
-from Estimated_speed import Estimated_speed
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # yolov5 strongsort root directory
@@ -31,7 +30,6 @@ if str(ROOT / 'strong_sort') not in sys.path:
     sys.path.append(str(ROOT / 'strong_sort'))  # add strong_sort ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-
 from yolov7.models.experimental import attempt_load
 from yolov7.utils.datasets import LoadImages, LoadStreams
 from yolov7.utils.general import (check_img_size, non_max_suppression, scale_coords, check_requirements, cv2,
@@ -40,9 +38,13 @@ from yolov7.utils.torch_utils import select_device, time_synchronized
 from yolov7.utils.plots import plot_one_box
 from strong_sort.utils.parser import get_config
 from strong_sort.strong_sort import StrongSORT
-
-
+from calculateDirection import calculateDirection
+from Estimated_speed import Estimated_speed
+from trafficLine import *
 VID_FORMATS = 'asf', 'avi', 'gif', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'ts', 'wmv'  # include video suffixes
+
+
+
 
 
 @torch.no_grad()
@@ -77,7 +79,6 @@ def run(
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
 ):
-
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     is_file = Path(source).suffix[1:] in (VID_FORMATS)
@@ -101,7 +102,7 @@ def run(
 
     # Load model
     device = select_device(device)
-    
+
     WEIGHTS.mkdir(parents=True, exist_ok=True)
     model = attempt_load(Path(yolo_weights), map_location=device)  # load FP32 model
     names, = model.names,
@@ -144,7 +145,7 @@ def run(
         strongsort_list[i].model.warmup()
     outputs = [None] * nr_sources
     outputs_prev = []
-    
+
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
 
     # Run tracking
@@ -170,7 +171,7 @@ def run(
         # Apply NMS
         pred = non_max_suppression(pred[0], conf_thres, iou_thres, classes, agnostic_nms)
         dt[2] += time_synchronized() - t3
-        
+
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             seen += 1
@@ -193,6 +194,10 @@ def run(
                     save_path = str(save_dir / p.parent.name)  # im.jpg, vid.mp4, ...
 
             curr_frames[i] = im0
+
+            # 斑马线检测
+            ret, location = detectTrafficLine(im0)
+
 
             txt_path = str(save_dir / 'tracks' / txt_file_name)  # im.txt
             s += '%gx%g ' % im.shape[2:]  # print string
@@ -220,40 +225,43 @@ def run(
                 t5 = time_synchronized()
                 dt[3] += t5 - t4
 
-
                 # 这里进行测速代码
                 if len(outputs_prev) < 2:
                     outputs_prev.append(outputs[i])
                 else:
                     outputs_prev[:] = [outputs_prev[-1], outputs[i]]
 
-
                 SpeedOver = False
 
                 # draw boxes for visualization
                 if len(outputs[i]) > 0:
                     for j, (output, conf) in enumerate(zip(outputs[i], confs)):
-    
+
                         bboxes = output[0:4]
                         id = output[4]
                         cls = output[5]
 
-                        bboxes_list=bboxes.tolist()
+
                         print(bboxes)
 
-
-                        bbox_width = output[2] - output[0]
-                        fps = 45
+                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
+                        print(fps)
 
                         if len(outputs_prev) == 2:
-                            bbox_speed,SpeedOverFlag = Estimated_speed(outputs_prev[-2], output, id, fps, bbox_width)
+                            cardiection = calculateDirection(outputs_prev[-2],output,id)
+                            print(cardiection)
+                            if cardiection == 'LEFT' or cardiection == 'RIGHT':
+                                bbox_speed, SpeedOverFlag = Estimated_speed(outputs_prev[-2], output, id, fps,1)
+                            else:
+                                bbox_speed, SpeedOverFlag = Estimated_speed(outputs_prev[-2], output, id, fps)
                         print(bbox_speed)
-                        # else:
-                        #     bbox_speed = "unknown"
-                        # bbox_speed, SpeedOverFlag = Estimated_speed(outputs_prev[-2], output, id, fps, bbox_width)
 
-                        if SpeedOverFlag:
+                        if SpeedOverFlag and c in [1, 10]:
                             save_crop = True
+                            SpeedOver = True
+
+
+
 
                         if save_txt:
                             # to MOT format
@@ -269,19 +277,36 @@ def run(
                         if save_vid or save_crop or show_vid:  # Add bbox to image
                             c = int(cls)  # integer class
                             id = int(id)  # integer id
-                            if c in[1,10]:
+                            if c in [1, 10]:
                                 label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else
-                                                                  (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
-                                label += f' {bbox_speed}'
+                                                                  (
+                                                                      f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
+                                label += f' {bbox_speed} {cardiection}'
                             else:
                                 label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else
-                                                                  (f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
-                            print(label)
+                                                                  (
+                                                                      f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
+
                             plot_one_box(bboxes, im0, label=label, color=colors[int(cls)], line_thickness=2)
                             if save_crop:
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
-                                save_one_box(torch.Tensor(bboxes), imc, file=save_dir / 'crops' / txt_file_name / names[c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
-                                save_crop = False
+                                if SpeedOver:
+                                    save_one_box(torch.Tensor(bboxes), imc, file=save_dir / 'speedover' / txt_file_name / names[
+                                        c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
+                                    save_crop = False
+
+                                else:
+                                    save_one_box(torch.Tensor(bboxes), imc, file=save_dir / 'crops' / txt_file_name / names[
+                                        c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
+                                    save_crop = False
+
+
+
+                        if ret:
+                            # 如果检测到斑马线，则在im0上绘制检测框
+                            # 假设location是一个包含两个坐标点的元组，表示检测框的对角线上的两个点
+                            cv2.rectangle(im0, location[0], location[1], (0, 255, 0), 2)
+                            print(location)
 
                 print(f'{s}Done. YOLO:({t3 - t2:.3f}s), StrongSORT:({t5 - t4:.3f}s)')
 
@@ -315,7 +340,8 @@ def run(
 
     # Print results
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
-    print(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS, %.1fms strong sort update per image at shape {(1, 3, imgsz, imgsz)}' % t)
+    print(
+        f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS, %.1fms strong sort update per image at shape {(1, 3, imgsz, imgsz)}' % t)
     if save_txt or save_vid:
         s = f"\n{len(list(save_dir.glob('tracks/*.txt')))} tracks saved to {save_dir / 'tracks'}" if save_txt else ''
         print(f"Results saved to {colorstr('bold', save_dir)}{s}")
@@ -323,23 +349,23 @@ def run(
         strip_optimizer(yolo_weights)  # update model (to fix SourceChangeWarning)
 
 
-
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--yolo-weights', nargs='+', type=str, default=WEIGHTS / 'best.pt', help='model.pt path(s)')
+    parser.add_argument('--yolo-weights', nargs='+', type=str, default=WEIGHTS / 'best.pt',
+                        help='model.pt path(s)')
     parser.add_argument('--strong-sort-weights', type=str, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
     parser.add_argument('--config-strongsort', type=str, default='strong_sort/configs/strong_sort.yaml')
-    parser.add_argument('--source', type=str, default='20230223_141845.mp4', help='file/dir/URL/glob, 0 for webcam')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[960], help='inference size h,w')
+    parser.add_argument('--source', type=str, default='video-02.mp4', help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.35, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--show-vid', action='store_true', help='display tracking video results')
-    parser.add_argument('--save-txt', default= True,action='store_true', help='save results to *.txt')
+    parser.add_argument('--show-vid', default=True,action='store_true', help='display tracking video results')
+    parser.add_argument('--save-txt', default=True, action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-crop', action='store_true', help='save cropped prediction boxes')
-    parser.add_argument('--save-vid', default= True,action='store_true', help='save video tracking results')
+    parser.add_argument('--save-vid', default=True, action='store_true', help='save video tracking results')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
     # class 0 is person, 1 is bycicle, 2 is car... 79 is oven
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')

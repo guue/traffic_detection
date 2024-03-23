@@ -1,5 +1,13 @@
+# 取的是隔一帧的距离   后续可以增加cint参数  取多几帧距离
+
 import math
-def Estimated_speed(outputs, output, id, fps, width):
+
+
+def Estimated_speed(outputs, output, id, fps, flag=0):
+    """
+    @param: outputs: 前一帧的位置信息 带id 二维的
+            output： 当前帧位置信息  无id信息
+    """
     SpeedOver = False
     prev_IDs = []  # 之前的ids
     work_IDs = []  # 有效的ids
@@ -13,32 +21,48 @@ def Estimated_speed(outputs, output, id, fps, width):
             work_IDs.append(m)
             work_prev_locations = outputs[m]  # 将当前帧有效检测车辆的信息存入work_locations中
 
-
-
     if len(work_IDs) > 0:
-        locations = [0,0]
-        prev_locations = [0,0]  # 存放中心点坐标
+        locations = [0, 0]
+        prev_locations = [0, 0]  # 存放中心点坐标
         bbox_prev = work_prev_locations[0:4]
         bbox = work_locations[0:4]
+        # p1 左上角坐标 p2 右下角坐标
         p1, p2 = (int(bbox_prev[0]), int(bbox_prev[1])), (int(bbox_prev[2]), int(bbox_prev[3]))
-        print(p1)
+
+        w1 = bbox_prev[2] - bbox_prev[0]
+        h1 = bbox_prev[3] - bbox_prev[1]
+        w2 = bbox[2] - bbox[0]
+        h2 = bbox[3] - bbox[1]
+
+        # 取两次宽度高度平均值 作为最终宽度高度
+        width = (w1 + w2) / 2
+        height = (h1+h2)/2
+
+
+
         prev_locations[0] = (p2[0] - p1[0]) / 2 + p1[0]
         prev_locations[1] = (p2[1] - p1[1]) / 2 + p1[1]
+
         x1, x2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
+
         locations[0] = (x2[0] - x1[0]) / 2 + x1[0]
         locations[1] = (x2[1] - x1[1]) / 2 + x1[1]
-        d=math.sqrt((locations[0] - prev_locations[0]) ** 2 + (locations[1] - prev_locations[1]) ** 2)
 
-        # speed = (math.sqrt((work_locations[0] - work_prev_locations[0]) ** 2 +  # 计算有效检测车辆的速度，采用线性的从像素距离到真实空间距离的映射
-        #                    (work_locations[1] - work_prev_locations[1]) ** 2) *  # 当视频拍摄视角并不垂直于车辆移动轨迹时，测算出来的速度将比实际速度低
-        #          width * fps / 5 * 3.6 * 2)
-        speed = ((d /width ) *2.5*3.6* fps  )  #像素速度
+        d = math.sqrt((locations[0] - prev_locations[0]) ** 2 + (locations[1] - prev_locations[1]) ** 2)
 
-        if speed > 60:
+        # flag 1 代表车流是横着的 height是车的长度 长度选取1.8 flag 0 车流垂直 width为车身宽度 真实值选取2
+        if w1/h1>=2 or w2/h2>=2 or flag==1:
+            dpix = 1.8 / height
+        else:
+            dpix = 2 / width * 4  # 像素真实距离比 车宽2 *5为修正值
+
+        speed = d * dpix * 3.6 * fps
+
+        if speed > 40:
             SpeedOver = True
 
-        print(speed)
-        # speed = 11.3
+
+
         speed = str(round(speed, 1)) + "km/h"
-        return speed,SpeedOver
-    return " ",SpeedOver
+        return speed, SpeedOver
+    return " ", SpeedOver

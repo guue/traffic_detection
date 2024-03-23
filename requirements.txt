@@ -20,7 +20,7 @@ seaborn>=0.11.0
 
 # deep_sort -----------------------------------
 
-easydict
+easydict~=1.13
 
 # torchreid -----------------------------------
 
@@ -30,7 +30,7 @@ six
 tb-nightly
 future
 yacs
-gdown
+gdown~=5.1.0
 flake8
 yapf
 isort==4.3.21
@@ -42,3 +42,8 @@ imageio
 #tensorflow>=2.4.1  # TFLite export (or tensorflow-cpu, tensorflow-aarch64)
 #openvino-dev  # OpenVINO export
 #git+https://github.com/PINTO0309/openvino2tensorflow #OpenVINO to TFLite export
+thop~=0.1.1-2209072238
+ultralytics~=8.1.2
+torchreid~=1.4.0
+keras~=2.1.5
+tensorflow~=2.13.0
