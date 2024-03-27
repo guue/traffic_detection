@@ -9,6 +9,7 @@ pip install -r requirements.txt
 
 ## Tracking sources
 
+```bash
 
 $ python track.py --source 0  # webcam
                            img.jpg  # image
