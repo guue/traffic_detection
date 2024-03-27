@@ -118,7 +118,9 @@ def Estimated_speed(outputs, output, id, fps, width):
 前端至少需要能调用视频（由一帧帧图片组成）以及字典 和 列表
 
 ## 追踪
+```bash
 $ python detect_v9.py --source .....
+```
 目前可以通过yolov9进行检测，速度会比yolov7要更高，且检测精度更好,目前模型用的官方**yolov9-c.pt** 模型，数据集为coco
 
 ### 待实现
