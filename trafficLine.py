@@ -93,9 +93,9 @@ if __name__ == "__main__":
 
     # DEBUG = False
 
-    Ni, Nj = (90, 1600)
+    Ni, Nj = (120, 1600)
 
-    cap = cv2.VideoCapture("./video-02.mp4")
+    cap = cv2.VideoCapture("./20230223_141845.mp4")
     time.sleep(1)
     NUM_FRAMES = int(cap.get(7))
     for ii in range(NUM_FRAMES):
@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
         indices, patches = zip(
             *sliding_window(Amplitude, theta, patch_size=(Ni, Nj)))  # use sliding_window get indices and patches
-        labels = predict(patches, DEBUG)  # predict zebra crossing for every patches 1 is zc 0 is background
+        labels = predict(patches,False)  # predict zebra crossing for every patches 1 is zc 0 is background
         indices = np.array(indices)
         ret, location = getlocation(indices, labels, Ni, Nj)
         print(ret)

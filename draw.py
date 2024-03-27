@@ -1,5 +1,35 @@
 import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
+
+def draw_texts(img, texts, start_pos, color=(255, 255, 255)):
+    """
+    使用Pillow在图片上绘制多行中文文本。
+    :param img: 要绘制文本的图片（OpenCV格式）。
+    :param texts: 一个字符串列表，每个字符串将被绘制在新的一行。
+    :param start_pos: 绘制文本的起始位置，形式为(x, y)。
+    :param font_scale: 字体大小。
+    :param font_thickness: 未使用，为了兼容原函数参数。
+    :param font_path: 字体文件的路径。
+    :param color: 文本颜色，形式为(R, G, B)。
+    :return: None
+    """
+    # 将OpenCV图像转换为PIL图像
+    img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+
+    font_path='simkai.ttf'
+    font = ImageFont.truetype(font_path, 10)
+
+    x, y = start_pos
+    for text in texts:
+        draw.text((x, y), text, fill=color,font=font)
+        y += font.getsize(text)[1]  # 计算下一行的y坐标
+
+    # 将PIL图像转换回OpenCV格式
+    cv2_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    img[:] = cv2_img  # 在原图像上绘制文本
 
 def draw_text_on_frame(frame, text, position=(10, 30), font=cv2.FONT_HERSHEY_SIMPLEX,
                        font_scale=1, font_color=(255, 255, 255), thickness=2, background_color=None):

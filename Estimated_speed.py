@@ -3,10 +3,11 @@
 import math
 
 
-def Estimated_speed(outputs, output, id, fps, flag=0):
+def Estimated_speed(outputs, output, id, fps, cint, flag=0):
     """
     @param: outputs: 前一帧的位置信息 带id 二维的
             output： 当前帧位置信息  无id信息
+            cint: 每n帧检测一次
     """
     SpeedOver = False
     prev_IDs = []  # 之前的ids
@@ -36,9 +37,7 @@ def Estimated_speed(outputs, output, id, fps, flag=0):
 
         # 取两次宽度高度平均值 作为最终宽度高度
         width = (w1 + w2) / 2
-        height = (h1+h2)/2
-
-
+        height = (h1 + h2) / 2
 
         prev_locations[0] = (p2[0] - p1[0]) / 2 + p1[0]
         prev_locations[1] = (p2[1] - p1[1]) / 2 + p1[1]
@@ -51,18 +50,15 @@ def Estimated_speed(outputs, output, id, fps, flag=0):
         d = math.sqrt((locations[0] - prev_locations[0]) ** 2 + (locations[1] - prev_locations[1]) ** 2)
 
         # flag 1 代表车流是横着的 height是车的长度 长度选取1.8 flag 0 车流垂直 width为车身宽度 真实值选取2
-        if w1/h1>=2 or w2/h2>=2 or flag==1:
+        if w1 / h1 >= 2 or w2 / h2 >= 2 or flag == 1:
             dpix = 1.8 / height
         else:
-            dpix = 2 / width * 4  # 像素真实距离比 车宽2 *5为修正值
+            dpix = 2 / width * 3  # 像素真实距离比 车宽2 *3为修正值
 
-        speed = d * dpix * 3.6 * fps
+        speed = d * dpix * 3.6 * fps / cint
 
         if speed > 40:
             SpeedOver = True
 
-
-
-        speed = str(round(speed, 1)) + "km/h"
         return speed, SpeedOver
     return " ", SpeedOver
