@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jul  8 13:18:36 2019
 
-@author: xingyu
-"""
 
 import torch.nn as nn
 import torch
@@ -15,7 +11,7 @@ class STNet(nn.Module):
     def __init__(self):
         super(STNet, self).__init__()
 
-        # Spatial transformer localization-network
+        # 定位网络
         self.localization = nn.Sequential(
                 nn.Conv2d(3, 32, kernel_size=3),
                 nn.MaxPool2d(2, stride=2),
@@ -24,7 +20,7 @@ class STNet(nn.Module):
                 nn.MaxPool2d(3, stride=3),
                 nn.ReLU(True)
                 )
-        # Regressor for the 3x2 affine matrix
+        # 用于3x2仿射变换矩阵的回归器
         self.fc_loc = nn.Sequential(
                 nn.Linear(32 * 14 * 2, 32),
                 nn.ReLU(True),

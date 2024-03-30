@@ -5,13 +5,13 @@ import math
 
 def Estimated_speed(outputs, output, id, fps, cint, flag=0):
     """
-    @param: outputs: 前一帧的位置信息 带id 二维的
-            output： 当前帧位置信息  无id信息
+    @param: outputs: 前一帧的位置信息
+            output： 当前帧位置信息
             cint: 每n帧检测一次
     """
     SpeedOver = False
-    prev_IDs = []  # 之前的ids
-    work_IDs = []  # 有效的ids
+    prev_IDs = []  # 之前的id
+    work_IDs = []  # 有效的id
     work_locations = output  # 当前帧数据：中心点x坐标、中心点y坐标、目标序号、车辆类别、车辆像素宽度
     work_prev_locations = []  # 上一帧数据，数据格式相同
     for i in range(len(outputs)):

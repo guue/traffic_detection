@@ -1,0 +1,22 @@
+[name]
+model_name=coco
+
+[train-configure]
+epochs=300
+steps=150,250
+batch_size=128
+subdivisions=1
+learning_rate=0.001
+
+[model-configure]
+pre_weights=None
+classes=1
+width=352
+height=352
+anchor_num=3
+anchors=48.24,15.06, 88.36,14.58, 148.63,20.03, 193.94,34.23, 270.37,63.83, 311.47,101.78
+
+[data-configure]
+train=/hy-tmp/Yolo-FastestV2-main/dataset/train.txt
+val=/hy-tmp/Yolo-FastestV2-main/dataset/val.txt
+names=/hy-tmp/Yolo-FastestV2-main/dataset/category.names

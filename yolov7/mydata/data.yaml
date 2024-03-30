@@ -1,7 +1,7 @@
 
-train: ../yolov7/mydata/train/images
-val: ../yolov7/mydata/val/images
-test: ../yolov7/mydata/test/images
+train: ../mydata/train/images
+val: ../mydata/val/images
+test: ../mydata/test/images
 
 # Classes
 nc: 11

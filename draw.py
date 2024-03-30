@@ -19,20 +19,20 @@ def draw_texts(img, texts, start_pos, color=(255, 255, 255)):
     img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(img_pil)
 
-    font_path='simkai.ttf'
+    font_path=r'D:\traffic_detection\simkai.ttf'
     font = ImageFont.truetype(font_path, 10)
 
     x, y = start_pos
     for text in texts:
         draw.text((x, y), text, fill=color,font=font)
-        y += font.getsize(text)[1]  # 计算下一行的y坐标
+        y += font.getsize(text)[1]+10  # 计算下一行的y坐标
 
     # 将PIL图像转换回OpenCV格式
     cv2_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
     img[:] = cv2_img  # 在原图像上绘制文本
 
 def draw_text_on_frame(frame, text, position=(10, 30), font=cv2.FONT_HERSHEY_SIMPLEX,
-                       font_scale=1, font_color=(255, 255, 255), thickness=2, background_color=None):
+                       font_scale=1, font_color=(0,0,0), thickness=3, background_color=None):
     """
     在图像帧上绘制文本。
 
@@ -69,7 +69,7 @@ def draw_class_counts(im0, counts):
     """在帧上绘制每个类别的计数，带有黑色背景"""
     position = (10, 70)  # 初始位置
     font_scale = 1
-    color = (255, 255, 255)  # 白色
+    color = (0, 255, 0)  # 白色
     background_color = (0, 0, 0)  # 黑色背景
     thickness = 1
     line_type = cv2.LINE_AA
@@ -81,7 +81,7 @@ def draw_class_counts(im0, counts):
         # 绘制背景矩形
         background_top_left = (position[0], position[1] - text_height - 5)
         background_bottom_right = (position[0] + text_width, position[1] + 5)
-        cv2.rectangle(im0, background_top_left, background_bottom_right, background_color, cv2.FILLED)
+        cv2.rectangle(im0, background_top_left, background_bottom_right, background_color, 2)
         # 绘制文本
         cv2.putText(im0, text, position, font, font_scale, color, thickness, line_type)
         position = (position[0], position[1] + text_height + 10)  # 更新位置，向下移动

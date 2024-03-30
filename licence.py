@@ -162,53 +162,51 @@ class Licence(object):
                 lb += CHARS[i]
             labels.append(lb)
         
-        return labels, np.array(pred_labels) 
+        return labels, np.array(pred_labels)
 
-    def detectLicence(self,img):
+    def detectLicence(self, img):
         # 格式转变，BGRtoRGB
         input = img
-        bboxes = create_mtcnn_net(input, (50, 15), self.device, p_model_path='MTCNN/weights/pnet_Weights', o_model_path='MTCNN/weights/onet_Weights')
+        bboxes = create_mtcnn_net(input, (50, 15), self.device, p_model_path='MTCNN/weights/pnet_Weights',
+                                  o_model_path='MTCNN/weights/onet_Weights')
         for i in range(bboxes.shape[0]):
             bbox = bboxes[i, :4]
-            x1, y1, x2, y2 = [int(bbox[j]) for j in range(4)]      
+            x1, y1, x2, y2 = [int(bbox[j]) for j in range(4)]
             w = int(x2 - x1 + 1.0)
             h = int(y2 - y1 + 1.0)
 
-            xyxy=[x1,y1,x2,y2]
-            
+            xyxy = [x1, y1, x2, y2]
+
             img_box = img[y1:y2, x1:x2, :]
             if img_box is None:
                 continue
-
-
 
             try:
                 im = cv2.resize(img_box, (94, 24), interpolation=cv2.INTER_CUBIC)
             except:
                 continue
-            im = (np.transpose(np.float32(im), (2, 0, 1)) - 127.5)*0.0078125
-            data = torch.from_numpy(im).float().unsqueeze(0).to(self.device)  # torch.Size([1, 3, 24, 94]) 
+            im = (np.transpose(np.float32(im), (2, 0, 1)) - 127.5) * 0.0078125
+            data = torch.from_numpy(im).float().unsqueeze(0).to(self.device)  # torch.Size([1, 3, 24, 94])
             transfer = self.STN(data)
-            
+
             preds = self.lprnet(transfer)
-            transformed_img = convert_image(transfer)
             preds = preds.cpu().detach().numpy()  # (1, 68, 18)
-            labels, pred_labels = self.decode(preds, self.CHARS)            
-            # draw.rectangle(
-            #             [x1,y1,x2,y2],outline=(0,0,255))
-            #if(labels!=None):
-            if re.match(r'^[\u4e00-\u9fa5][A-Z0-9]{6}$',labels[0]) != None:
-            #在图片上绘制中文
+            labels, pred_labels = self.decode(preds, self.CHARS)
+
+            # 新增计算置信度的逻辑
+            confidence_scores = preds.max(axis=2)  # 取每个位置最大的概率值
+            confidence = np.mean(confidence_scores)  # 计算平均置信度
+
+            if re.match(r'^[\u4e00-\u9fa5][A-Z0-9]{6}$', labels[0]) != None:
                 pass
-                #plot_one_box(xyxy, img, label=labels[0], color=Color.YELLOW, line_thickness=3)
             else:
-                labels[0]=""
-            #xyxy=[x+x1,y+y1,x+x2,y+y2]
-            #plot_one_box(xyxy, img, label=labels[0], color=(100,205,255), line_thickness=3)
-            
-            return xyxy,labels[0]
+                labels[0] = ""
+
+            # 返回检测框、识别的车牌号以及置信度
+            return xyxy, labels[0], confidence
+
             
 
-            #return xyxy,labels[0]
+
 
 

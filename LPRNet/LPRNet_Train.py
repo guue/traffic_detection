@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Jul  4 09:07:10 2019
 
-@author: xingyu
-"""
 import os
 from model.LPRNET import LPRNet, CHARS
 from model.STN import STNet

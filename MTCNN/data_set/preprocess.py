@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jul  8 10:17:20 2019
-The code is designed to split the data for train and validation 
 
-@author: xingyu
-"""
 from imutils import paths
 import numpy as np
 import cv2

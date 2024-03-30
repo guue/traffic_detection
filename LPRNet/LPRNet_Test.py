@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Jun 26 15:49:57 2019
 
-@author: xingyu
-"""
 import sys
 import os
 sys.path.append(os.getcwd())

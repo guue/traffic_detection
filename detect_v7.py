@@ -5,6 +5,7 @@ import os
 from ultralytics.utils.plotting import save_one_box
 
 from licence import Licence
+from zebra_detector.test import detect_zoo
 
 # limit the number of cpus used by high performance libraries
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -42,16 +43,21 @@ from strong_sort.utils.parser import get_config
 from strong_sort.strong_sort import StrongSORT
 from calculateDirection import calculateDirection
 from Estimated_speed import Estimated_speed
-from trafficLine import *
+
 from draw import *
 
 import matplotlib.pyplot as plt
 
 VID_FORMATS = 'asf', 'avi', 'gif', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'ts', 'wmv'  # include video suffixes
+import pynvml
+
+
+
 
 
 class VideoTrack:
     def __init__(self, opt):
+        self.process_time = {}
         self.im0_s = None
         self.pred = None
         self.webcam = None
@@ -140,21 +146,21 @@ class VideoTrack:
 
         # Placeholder for FPS calculation
         self.fps = 0
-
-    def plot_vehicle_counts(self, vehicle_counts, save_path):
-        times = list(vehicle_counts.keys())
-        counts = list(vehicle_counts.values())
+    def plot_counts(self, count, save_path,title,xlabel):
+        times = list(count.keys())
+        counts = list(count.values())
 
         plt.figure(figsize=(10, 6))
         plt.plot(times, counts, marker='o', linestyle='-', color='b')
-        plt.title(' Vehicle Count')
-        plt.xlabel('Time (seconds)')
-        plt.ylabel(' Vehicle Count')
+        plt.title(title+' Count')
+        plt.xlabel(xlabel)
+        plt.ylabel(title+' Count')
         plt.grid(True)
 
         # 保存图表到指定路径
         plt.savefig(save_path)
         plt.close()  # 关闭图表窗口，释放资源
+
 
     def update_or_add(self, car_status_dict):
 
@@ -200,6 +206,7 @@ class VideoTrack:
         return dataset, vid_path, vid_writer, txt_path, nr_sources
 
     def run(self):
+        gpu_memory = {}
         frame_count = 0
         global cardiection, CarLicence, label, save_path
         colors = [[random.randint(0, 255) for _ in range(3)] for _ in self.names]
@@ -207,9 +214,11 @@ class VideoTrack:
         curr_frames, prev_frames = [None] * self.nr_sources, [None] * self.nr_sources
 
         start_time = time.time()
+
         for frame_idx, (path, im, im0s, vid_cap) in enumerate(self.dataset):
 
             current_time = time.time() - start_time
+
             frame_count += 1
             # s = ''
             im = torch.from_numpy(im).to(self.device)
@@ -225,7 +234,7 @@ class VideoTrack:
 
             if frame_count % 2 == 0:
                 self.car_status.clear()
-
+                frame_start_time = time.time()  # 每一帧检测开始时间
                 self.class_counts.clear()
                 # Inference
                 self.pred = self.yolo_model(im)
@@ -255,7 +264,18 @@ class VideoTrack:
                     curr_frames[i] = im0
                     SpeedOver = False
                     # 斑马线检测
-                    ret, location = detectTrafficLine(im0)
+                    zoo_locations, scale_h, scale_w = detect_zoo(im0)
+                    # print(f'zoo:{zoo_locations}')
+                    for box in zoo_locations[0]:
+                        box = box.tolist()
+                        x1, y1 = int(box[0] * scale_w), int(box[1] * scale_h)
+                        x2, y2 = int(box[2] * scale_w), int(box[3] * scale_h)  # 解析返回的位置信息
+                        conf_zoo = box[4]
+                        boxes = [x1, y1, x2, y2]
+                        # 设置斑马线的类别标签为 100
+                        zebra_label = 100
+                        label_text = f'Zebra Crossing: {zebra_label} {conf_zoo}'
+                        # annotator.box_label(boxes,label_text,color=(0,255,0))   #斑马线绘制
 
                     txt_path = str(self.save_dir / 'tracks' / txt_file_name)  # im.txt
                     # s += '%gx%g ' % im.shape[2:]  # print string
@@ -326,9 +346,11 @@ class VideoTrack:
 
 
                                         else:
-                                            print("Invalid cropped image size.")
+                                            pass
+                                            # print("Invalid cropped image size.")
                                     else:
-                                        print("Invalid crop coordinates.")
+                                        pass
+                                        # print("Invalid crop coordinates.")
                                 if id in self.car_licence:
                                     car_status_dict['licence'] = self.car_licence[id]
 
@@ -398,11 +420,7 @@ class VideoTrack:
                                                              c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
                                             self.save_crop = False
 
-                                if ret:
-                                    # 如果检测到斑马线，则在im0上绘制检测框
-                                    # 假设location是一个包含两个坐标点的元组，表示检测框的对角线上的两个点
-                                    cv2.rectangle(im0, location[0], location[1], (0, 255, 0), 2)
-                                    print(location)
+
 
                                 # draw_text_on_frame(im0, f"overspeed:{' '.join(self.overspeedcar)}",
                                 #                    background_color=(0, 0, 0))
@@ -416,7 +434,7 @@ class VideoTrack:
                         print('No detections')
 
                     if len(self.car_status) > 0:
-                        print(self.car_status)
+                        # print(self.car_status)
                         height, width = im0.shape[:2]  # 获取图像的高度和宽度
 
                         # 设定一个从右边界向左的偏移量
@@ -434,6 +452,22 @@ class VideoTrack:
                     prev_frames[i] = curr_frames[i]
 
                     self.im0_s = im0.copy()
+                    frame_end_time = time.time()  # 结束处理帧的时间
+
+                    frame_processing_time = frame_end_time - frame_start_time  # 计算这一帧的处理时间
+                    print(f"Frame {frame_count} processing time: {frame_processing_time:.4f} seconds.")
+
+                    self.process_time[int(frame_count)]=frame_processing_time
+
+                    pynvml.nvmlInit()
+                    handles = pynvml.nvmlDeviceGetHandleByIndex(0)  # 0表示显卡标号
+                    meminfo = pynvml.nvmlDeviceGetMemoryInfo(handles)
+
+
+                    gpu_memory[int(frame_count)]=meminfo.used / 1024 ** 3
+
+                    print(f"\n显存占用:{meminfo.used / 1024 ** 3}g\n")  # 已用显存大小
+
 
             if self.im0_s is None:
                 if self.webcam:  # nr_sources = 1
@@ -477,7 +511,9 @@ class VideoTrack:
         # Print results
         self.vehicle_counts_over_time[int(time.time() - start_time)] = self.vehicle_count
 
-        self.plot_vehicle_counts(self.vehicle_counts_over_time, (str(self.save_dir)+'/'+'traffic car count'))
+        self.plot_counts(self.vehicle_counts_over_time, (str(self.save_dir) + '/' + 'traffic car count'),'vehicle','Time/ms')
+        self.plot_counts(self.process_time,(str(self.save_dir) + '/' + 'process time count'),'process time','frame_idx')
+        self.plot_counts(gpu_memory,(str(self.save_dir) + '/' + 'gpu memory count'),'gpu memory','frame_idx')
 
         if self.save_txt or self.save_vid:
             s = f"\n{len(list(self.save_dir.glob('tracks/*.txt')))} tracks saved to {self.save_dir / 'tracks'}" if self.save_txt else ''
@@ -490,12 +526,12 @@ def parse_opt():
                         help='model.pt path(s)')
     parser.add_argument('--strong-sort-weights', type=str, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
     parser.add_argument('--config-strongsort', type=str, default='strong_sort/configs/strong_sort.yaml')
-    parser.add_argument('--source', type=str, default='video_20s.mp4', help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--source', type=str, default='video_10s.mp4', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.35, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
-    parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--show-vid', default=True, action='store_true', help='display tracking video results')
     parser.add_argument('--save-txt', default=True, action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', default=False, action='store_true', help='save confidences in --save-txt labels')
@@ -506,9 +542,9 @@ def parse_opt():
     parser.add_argument('--classes', default=[0, 1, 2, 3, 5, 7, 9], nargs='+', type=int,
                         help='filter by class: --classes 0, or --classes 0 2 3')
     parser.add_argument('--agnostic-nms', default=False, action='store_true', help='class-agnostic NMS')
-    parser.add_argument('--project', default=ROOT / 'output/track', help='save results to project/name')
+    parser.add_argument('--project', default=ROOT / 'output/track_v7', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
-    parser.add_argument('--exist-ok', default=False, action='store_true',
+    parser.add_argument('--exist-ok', default=True, action='store_true',
                         help='existing project/name ok, do not increment')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')

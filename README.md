@@ -4,14 +4,26 @@
 
  安装依赖库，确保python>3.8
 
-pip install -r requirements.txt
+如果没有cuda先去安装cuda
+
+https://blog.csdn.net/chen565884393/article/details/127905428
+
+安装**anaconda** **pytorch**
+
+conda和torch安装: https://blog.csdn.net/MCYZSF/article/details/116525159
+
+
+最后 cd到本目录 
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+
 
 
 ## Tracking sources
 
 ```bash
 
-$ python track.py --source 0  # webcam
+$ python detect_v9.py --source 0  # webcam
                            img.jpg  # image
                            vid.mp4  # video
                            path/  # directory
@@ -31,7 +43,7 @@ you can select a Yolov9/7 family model for automatic download
 ```bash
 
 
-$ python track.py --source 0 --yolo-weights yolov7.pt --img 640
+$ python python detect_v9.py --source 0 --yolo-weights yolov7.pt --img 640
                                             yolov9-c.pt --img 640
                                            
 ```
@@ -43,11 +55,8 @@ The above applies to StrongSORT models as well. Choose a ReID model based on you
 ```bash
 
 
-$ python track.py --source 0 --strong-sort-weights osnet_x0_25_market1501.pt
-                                                   osnet_x0_5_market1501.pt
-                                                   osnet_x0_75_msmt17.pt
-                                                   osnet_x1_0_msmt17.pt
-                                                   ...
+$ python python detect_v9.py --source 0 --strong-sort-weights osnet_x0_25_market1501.pt
+                                                   
 ```
 
 
@@ -55,17 +64,11 @@ $ python track.py --source 0 --strong-sort-weights osnet_x0_25_market1501.pt
 
 
 ```bash
-python track.py --source 0 --yolo-weights yolov7.pt --classes 0  # tracks persons only
+python python detect_v9.py --source 0 --yolo-weights yolov7.pt --classes 0  # tracks persons only
 ```
 
 
-## MOT compliant results
 
-Can be saved to your experiment folder `runs/track/exp/labels/` by 
-
-```bash
-python track.py --source ... --save-txt 
-```
 
 ## 测速实现
 首先使用提前设定好的车辆真实宽度和检测出来的车辆像素宽度求出真实距离和像素距离的比值为c，再使用每辆车的前后两帧框的中心坐标计算出两帧之间移动的像素距离。利用这个比值和像素距离做映射，就可以求出两帧之间车辆移动的真实距离。然后距离除以两帧之间的时间，就是速度了。本测速算法中将车辆真实移动距离与像素移动距离看成是线性关系，仅在监控相机轴线与车辆移动方向垂直时才能成立，并且检测出来的车辆框在空间上会产生一定形变，使得真实距离和像素距离的映射关系不准确。
@@ -124,6 +127,30 @@ $ python detect_v9.py --source .....
 ```
 目前可以通过yolov9进行检测，速度会比yolov7要更高，且检测精度更好,目前模型用的官方**yolov9-c.pt** 模型，数据集为coco
 
-### 待实现
+## 待实现
 此算法检测的速度不准确 低于正常速度 还需通过**单目测距** 
-**前端**
+车牌识别算法改进
+yolov9数据集制作以及算法改进
+
+## 2024/3/30 新增
+**车牌检测线程**
+
+**图片显示线程**
+
+**斑马线检测线程**
+
+增加后处理时间：
+![img_1.png](img_1.png)
+增加前处理时间：
+![img.png](img.png)
+
+## 前端要注意的点
+**车辆截图保存**
+目前所有图片都保存在后端，因此前端要考虑如何从后端读入相关保存的图片，或者提供一个网络上传接口，实时将后端图片进行上传至前端
+
+**实时车流统计**
+目前车流统计是通过字典格式保存 格式{类别：数量}
+前端需要实时读入 并实时绘制相应统计图
+
+**实时图片**
+前端可直接读入self.image_display_queue此队列里的图片进行显示

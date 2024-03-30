@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Jul  8 10:17:20 2019
 
-@author: xingyu
-"""
 
 from imutils import paths
 import numpy as np
