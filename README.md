@@ -13,7 +13,7 @@ https://blog.csdn.net/chen565884393/article/details/127905428
 conda和torch安装: https://blog.csdn.net/MCYZSF/article/details/116525159
 
 
-最后 cd到本目录 
+最后 在conda终端激活环境后 cd到本目录 
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 
