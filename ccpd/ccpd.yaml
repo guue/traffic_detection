@@ -1,0 +1,6 @@
+train: ../ccpd/images/train
+val: ../ccpd/images/val
+test: ../ccpd/images/test
+
+nc: 1
+names: ['plate']

@@ -152,21 +152,13 @@ class VideoTracker:
 
 
         """
-        用outputs[i]索引分类和id 如果cls == car 将其以str append到每一个车的状态信息列表car_status里 再加速度和方向信息  通过license_id 索引其车牌信息
-        储存格式应该是 ['id: license: dir: speed: illegal: '] illegal 显示其违法信息  如果涉及违法 则在ui中标红
-        在一开始 illegal 默认为 None 
-        先在run里定义一个car_status_dir key：id,license,dir,speed,illegal
-        ilegal 默认为 None
-        if SpeedOverFlag
-        dir['illegal'] = SpeedOver 
+        储存格式应该是 ['id: license: speed: illegal: '] illegal 显示其违法信息  如果涉及违法 则在ui中标红
+        在一开始 illegal 默认为 '' 
+        如果有违规需要提出预警信息 前端ui相应车辆信息行列标红
         warning()
             ui 车辆信息标红
-            并对车辆信息（车牌号 违法信息）保存在excel里 
-
-        每一帧图片都在不断更新这个dir
-        每更新一个dir
-        就以str格式 append到car_status_list上 
-        当这一帧所有list都更新完毕后    清空之前的ui显示  加入新ui显示
+            并对车辆信息（车牌号 违法信息）保存
+        最后将所有信息存储在car_status里，前端需要读取里面的信息，并根据相应的位置进行显示 每一帧图片之后这个信息都会更新 
         """
         self.car_licence = {}  # {id:{license:licence,conf:conf},....}
         self.car_status = []  # 存放每辆车的状态
@@ -244,24 +236,26 @@ class VideoTracker:
         plt.close()  # 关闭图表窗口，释放资源
 
     def update_or_add(self, car_status_dict):
-
         """
         car_status_dict即将要添加的车辆状态信息
         """
-
+        # 准备更新或添加的车辆状态信息字符串，移除字典表示的开头和结尾的 '{' 和 '}'
+        car_status_str = ", ".join([f"{k}: {v}" for k, v in car_status_dict.items()])
         updated = False
         for i, status_str in enumerate(self.car_status):
-            status_dict = eval(status_str)  # 假设每个字符串都能安全地转换回字典
+            # 从当前列表中的车辆状态字符串中提取车牌信息
+            licence_existing = [pair.split(": ")[1] for pair in status_str.split(", ") if "licence" in pair][0]
 
-            if status_dict['licence'] == car_status_dict['licence'] and status_dict['licence'] != '' and \
-                    car_status_dict['licence'] != '':
-                # 找到相同license的字典，更新值
-                self.car_status[i] = str(car_status_dict)
+            # 检查是否满足更新条件：车牌号匹配且不为空
+            if licence_existing == car_status_dict['licence'] and licence_existing != '' and car_status_dict[
+                'licence'] != '':
+                # 更新现有条目
+                self.car_status[i] = car_status_str
                 updated = True
                 break
         if not updated:
-            # 没有找到相同license的字典，添加新的字典
-            self.car_status.append(str(car_status_dict))
+            # 如果未找到匹配的车牌号来更新，则添加新的车辆状态信息
+            self.car_status.append(car_status_str)
 
     def loadmodel(self, weights):
         model = DetectMultiBackend(Path(weights), device=self.device, dnn=self.dnn, data=self.data, fp16=self.half)
@@ -433,7 +427,7 @@ class VideoTracker:
                                 bboxes = output[0:4]
                                 id = output[4]
                                 cls = output[5]
-                                car_status_dict = {"id": id, "licence": '', "speed": '',
+                                car_status_dict = {"id": int(id), "licence": '', "speed": '',
                                                    "illegal": ''}
                                 if int(cls) in [2, 5, 7]:
                                     self.vehicle_count += 1
@@ -479,10 +473,10 @@ class VideoTracker:
 
                                 if SpeedOverFlag and int(cls) in [2,5,7]:
 
-                                    if self.car_licence[id]['licence'] if id in self.car_licence else id is not None:
+                                    if  id is not None:
                                         save_one_box(torch.Tensor(bboxes), imc,
                                                      file=self.save_dir / 'speedover' / self.names[int(cls)] /
-                                                          f"{self.car_licence[id]['licence'] if id in self.car_licence else id}" / f'{speed}.jpg',
+                                                          f"{str(int(id))}" / f'{speed}.jpg',
                                                      BGR=True)
                                 if id in self.car_licence:
                                     car_status_dict['licence'] = self.car_licence[id]['licence']
@@ -505,9 +499,7 @@ class VideoTracker:
                                     id = int(id)  # integer id
                                     if c in [2, 5, 7]:
                                         label = None if self.hide_labels else (
-                                            f'{id} {self.names[c]}' if self.hide_conf else
-                                            (
-                                                f'{id} {conf:.2f}' if self.hide_class else f'{id} {self.names[c]} {conf:.2f}'))
+                                            f'{int(id)} {self.names[c]}')
                                         label += f" {bbox_speed}  "
                                         if id in self.car_licence:
                                             label += f"{self.car_licence[id]['licence']}"
@@ -531,7 +523,7 @@ class VideoTracker:
                     im0_writable = im0.copy()
                     draw_class_counts(im0_writable, self.class_counts)
                     if len(self.car_status) > 0:
-                        # print(self.car_status)
+                        print(self.car_status)
 
                         """
                         向前端传递 汽车信息表  type:列表
