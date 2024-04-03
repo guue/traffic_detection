@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import os
-from model.LPRNET import LPRNet, CHARS
-from model.STN import STNet
-from data.load_data import LPRDataLoader, collate_fn
+from LPRNet.model.LPRNet import LPRNet
+from LPRNet.model.STN import STNet
+from LPRNet.data.load_data import LPRDataLoader, collate_fn,CHARS
 from Evaluation import eval, decode
 import torch
 from torch.utils.data import DataLoader
@@ -27,22 +27,22 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='LPR Training')
     parser.add_argument('--img_size', default=(94, 24), help='the image size')
-    parser.add_argument('--img_dirs_train', default="./data/train", help='the training images path')
-    parser.add_argument('--img_dirs_val', default="./data/validation", help='the validation images path')
+    parser.add_argument('--img_dirs_train', default="./LPRNet/data/train", help='the training images path')
+    parser.add_argument('--img_dirs_val', default="./LPRNet/data/validation", help='the validation images path')
     parser.add_argument('--dropout_rate', default=0.5, help='dropout rate.')
-    parser.add_argument('--epoch', type=int, default=33, help='number of epoches for training')
+    parser.add_argument('--epoch', type=int, default=100, help='number of epoches for training')
     parser.add_argument('--batch_size', default=128, help='batch size')
     args = parser.parse_args()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
     lprnet = LPRNet(class_num=len(CHARS), dropout_rate=args.dropout_rate)
     lprnet.to(device)
-    lprnet.load_state_dict(torch.load('weights/LPRNet_model_Init.pth', map_location=lambda storage, loc: storage))
+    lprnet.load_state_dict(torch.load('LPRNet/weights/LPRNet_model_Init.pth', map_location=lambda storage, loc: storage))
     print("LPRNet loaded")
     
     STN = STNet()
     STN.to(device)
-    STN.load_state_dict(torch.load('weights/STN_model_Init.pth', map_location=lambda storage, loc: storage))
+    STN.load_state_dict(torch.load('LPRNet/weights/STN_model_Init.pth', map_location=lambda storage, loc: storage))
     print("STN loaded")
     
     dataset = {'train': LPRDataLoader([args.img_dirs_train], args.img_size),
@@ -57,12 +57,12 @@ if __name__ == '__main__':
                                   {'params': lprnet.parameters()}])
     ctc_loss = nn.CTCLoss(blank=len(CHARS)-1, reduction='mean') # reduction: 'none' | 'mean' | 'sum'
     ## save logging and weights
-    train_logging_file = 'train_logging.txt'
-    validation_logging_file = 'validation_logging.txt'
-    save_dir = 'saving_ckpt'
-    if os.path.exists(save_dir):
-        raise NameError('model dir exists!')
-    os.makedirs(save_dir)
+    train_logging_file = 'LPRNet/train_logging.txt'
+    validation_logging_file = 'LPRNet/validation_logging.txt'
+    save_dir = 'LPRNet/saving_ckpt'
+    # if os.path.exists(save_dir):
+    #     raise NameError('model dir exists!')
+    # os.makedirs(save_dir)
     
     start_time = time.time()
     total_iters = 0
@@ -120,15 +120,8 @@ if __name__ == '__main__':
                     # save model
             if total_iters % 900 == 0:
 
-                torch.save({
-                    'iters': total_iters,
-                    'net_state_dict': lprnet.state_dict()},
-                    os.path.join(save_dir, 'lprnet_Iter_%06d_model.ckpt' % total_iters))
-                
-                torch.save({
-                    'iters': total_iters,
-                    'net_state_dict': STN.state_dict()},
-                    os.path.join(save_dir, 'stn_Iter_%06d_model.ckpt' % total_iters))
+                torch.save( lprnet.state_dict(),os.path.join(save_dir, 'lprnet_Iter_%06d_model.pth' % total_iters))
+                torch.save( STN.state_dict(),os.path.join(save_dir, 'stn_Iter_%06d_model.pth' % total_iters))
                     
             # evaluate accuracy
             if total_iters % 900 == 0:
@@ -149,6 +142,8 @@ if __name__ == '__main__':
                 
                 lprnet.train()
                 STN.train()
+
+
                                 
     time_elapsed = time.time() - start_time  
     print('Finally Best Accuracy: {:.4f} in iters: {}'.format(best_acc, best_iters))

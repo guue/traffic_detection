@@ -17,9 +17,9 @@ ads = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q'
 
 
 parser = argparse.ArgumentParser(description='crop the licence plate from original image')
-parser.add_argument("-image", help='image path', default='../ccpd/ccpd_dataset/ccpd_base', type=str)
-parser.add_argument("-dir_train", help='save directory', default='train', type=str)
-parser.add_argument("-dir_val", help='save directory', default='validation', type=str)
+parser.add_argument("-image", help='image path', default='ccpd/images/train', type=str)
+parser.add_argument("-dir_train", help='save directory', default=r'D:\traffic_detection\LPRNet\data\train', type=str)
+parser.add_argument("-dir_val", help='save directory', default=r'D:\traffic_detection\LPRNet\data\validation', type=str)
 args = parser.parse_args()
 
 img_paths = []
@@ -61,16 +61,20 @@ for i in range(len(img_paths)):
         
     idx += 1 
     
-    if idx % 100 == 0:
-        print("%d images done" % idx)
+    # if idx % 100 == 0:
+    #     print("%d images done" % idx)
     
     if idx % 4 == 0:
-        save = save_dir_val+'/'+lb+suffix      
-        cv2.imwrite(save, img_crop)
+        save = save_dir_val+'/'+lb+suffix
+        print(save)
+
+        cv2.imencode('.jpg', img_crop)[1].tofile(save)
         idx_val += 1
+        print("%d val images done" % idx)
     else:
         save = save_dir_train+'/'+lb+suffix      
-        cv2.imwrite(save, img_crop)
+        cv2.imencode('.jpg', img_crop)[1].tofile(save)
         idx_train += 1
+        print("%d train images done" % idx)
         
 print('image data processing done, write %d training images, %d val images' % (idx_train, idx_val))

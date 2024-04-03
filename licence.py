@@ -1,9 +1,9 @@
 import sys
 
-from MTCNN.MTCNN import create_mtcnn_net
+
 
 sys.path.append('./LPRNet')
-sys.path.append('./MTCNN')
+
 
 from LPRNet.LPRNet_Test import *
 
@@ -12,7 +12,7 @@ import torch
 
 import numpy as np
 import cv2
-
+from ultralytics.test import predict, random_color
 
 import re
 
@@ -104,14 +104,14 @@ class Licence(object):
     def __init__(self):
         super().__init__()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        #self.yolo = YOLO()
+        self.yolo_model = 'weights/licence_yolov8.pt'
         self.STN = STNet()
         self.STN.to(self.device)
-        self.STN.load_state_dict(torch.load('LPRNet/weights/Final_STN_model.pth', map_location=lambda storage, loc: storage))
+        self.STN.load_state_dict(torch.load('weights/stn_93.12_model.pth', map_location=lambda storage, loc: storage))
         self.STN.eval()
         self.lprnet = LPRNet(class_num=len(CHARS), dropout_rate=0)
         self.lprnet.to(self.device)
-        self.lprnet.load_state_dict(torch.load('LPRNet/weights/Final_LPRNet_model.pth', map_location=lambda storage, loc: storage))
+        self.lprnet.load_state_dict(torch.load('weights/lprnet_93.12._model.pth', map_location=lambda storage, loc: storage))
         self.lprnet.eval()
         self.CHARS = ['京', '沪', '津', '渝', '冀', '晋', '蒙', '辽', '吉', '黑',
         '苏', '浙', '皖', '闽', '赣', '鲁', '豫', '鄂', '湘', '粤',
@@ -165,19 +165,18 @@ class Licence(object):
         return labels, np.array(pred_labels)
 
     def detectLicence(self, img):
-        # 格式转变，BGRtoRGB
-        input = img
-        bboxes = create_mtcnn_net(input, (50, 15), self.device, p_model_path='MTCNN/weights/pnet_Weights',
-                                  o_model_path='MTCNN/weights/onet_Weights')
-        for i in range(bboxes.shape[0]):
-            bbox = bboxes[i, :4]
-            x1, y1, x2, y2 = [int(bbox[j]) for j in range(4)]
-            w = int(x2 - x1 + 1.0)
-            h = int(y2 - y1 + 1.0)
+        # 检查并转换图像通道数
+        if img.shape[2] == 4:  # 如果图像是4通道的
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)  # 将图像从BGRA转换为BGR
+        boxes, names = predict(self.yolo_model, img)
+        final_labels = []
+        final_confidences = []
 
-            xyxy = [x1, y1, x2, y2]
+        for obj in boxes:
+            left, top, right, bottom = int(obj[0]), int(obj[1]), int(obj[2]), int(obj[3])
+            detection_confidence = obj[4]  # YOLO检测置信度
 
-            img_box = img[y1:y2, x1:x2, :]
+            img_box = img[top:bottom, left:right]
             if img_box is None:
                 continue
 
@@ -185,25 +184,40 @@ class Licence(object):
                 im = cv2.resize(img_box, (94, 24), interpolation=cv2.INTER_CUBIC)
             except:
                 continue
+
             im = (np.transpose(np.float32(im), (2, 0, 1)) - 127.5) * 0.0078125
-            data = torch.from_numpy(im).float().unsqueeze(0).to(self.device)  # torch.Size([1, 3, 24, 94])
+            data = torch.from_numpy(im).float().unsqueeze(0).to(self.device)
             transfer = self.STN(data)
 
             preds = self.lprnet(transfer)
-            preds = preds.cpu().detach().numpy()  # (1, 68, 18)
-            labels, pred_labels = self.decode(preds, self.CHARS)
+            preds_softmax = torch.softmax(preds, dim=2)  # 对预测结果应用softmax获取概率分布
+            preds_max_conf, preds_index = torch.max(preds_softmax, dim=2)  # 获取每个位置最大概率及其索引
+            preds_conf = preds_max_conf.detach().cpu().numpy()[0]  # 转换为numpy数组，获取第一项
+            average_pred_conf = np.mean(preds_conf)  # 计算平均预测字符置信度
 
-            # 新增计算置信度的逻辑
-            confidence_scores = preds.max(axis=2)  # 取每个位置最大的概率值
-            confidence = np.mean(confidence_scores)  # 计算平均置信度
+            # 计算最终置信度：检测置信度与平均预测字符置信度的加权平均
+            final_confidence = (detection_confidence + average_pred_conf) / 2
 
-            if re.match(r'^[\u4e00-\u9fa5][A-Z0-9]{6}$', labels[0]) != None:
-                pass
+            labels, pred_labels = self.decode(preds.cpu().detach().numpy(), self.CHARS)
+            if re.match(r'^[\u4e00-\u9fa5][A-Za-z0-9]{6,7}$', labels[0]) is not None:
+                final_labels.append(labels[0])
+                final_confidences.append(final_confidence)
             else:
-                labels[0] = ""
+                final_labels.append('')
+                final_confidences.append(0)
 
-            # 返回检测框、识别的车牌号以及置信度
-            return xyxy, labels[0], confidence
+        # 假设选择置信度最高的车牌返回
+        if final_confidences:  # 如果有识别到车牌
+            max_conf_index = np.argmax(final_confidences)  # 获取最大置信度索引
+            return final_labels[max_conf_index], final_confidences[max_conf_index]
+
+if __name__=="__main__":
+    lc=Licence()
+    image = cv2.imdecode(np.fromfile(r"D:\traffic_detection\ccpd\images\val\3056141493055555554-88_93-205&455_603&597-603&575_207&597_205&468_595&455-0_0_3_24_32_27_31_33-90-213.jpg", dtype=np.uint8), -1)
+    label,conf = lc.detectLicence(image)
+    print(label)
+
+
 
             
 

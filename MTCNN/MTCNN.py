@@ -3,10 +3,10 @@ import os
 sys.path.append(os.getcwd())
 import argparse
 import torch
-from MTCNN.model.MTCNN_nets import PNet, ONet
+from model.MTCNN_nets import PNet, ONet
 import math
 import numpy as np
-from MTCNN.utils.util import *
+from utils.util import *
 import cv2
 import time
 
@@ -158,7 +158,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='MTCNN Demo')
     parser.add_argument("--test_image", dest='test_image', help=
-    "test image path", default="test/28.jpg", type=str)
+    "test image path", default="ccpd/images/val/09-1_13-81&477_603&621-578&604_81&621_106&494_603&477-0_0_24_31_3_27_30-102-134.jpg", type=str)
     parser.add_argument("--scale", dest='scale', help=
     "scale the iamge", default=1, type=int)
     parser.add_argument('--mini_lp', dest='mini_lp', help=
@@ -173,7 +173,7 @@ if __name__ == '__main__':
 
     start = time.time()
 
-    bboxes = create_mtcnn_net(image, args.mini_lp, device, p_model_path='weights/pnet_Weights', o_model_path='weights/onet_Weights')
+    bboxes = create_mtcnn_net(image, args.mini_lp, device, p_model_path='MTCNN/weights/pnet_Weights', o_model_path='MTCNN/weights/onet_Weights')
 
     print("image predicted in {:2.3f} seconds".format(time.time() - start))
 

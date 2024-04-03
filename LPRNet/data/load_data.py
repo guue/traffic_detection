@@ -37,7 +37,7 @@ class LPRDataLoader(Dataset):
 
     def __getitem__(self, index):
         filename = self.img_paths[index]
-        Image = cv2.imread(filename)
+        Image = cv2.imdecode(np.fromfile(filename, dtype=np.uint8), -1)
         height, width, _ = Image.shape
         if height != self.img_size[1] or width != self.img_size[0]:
             Image = cv2.resize(Image, self.img_size)
@@ -50,7 +50,7 @@ class LPRDataLoader(Dataset):
         for c in imgname:
             label.append(CHARS_DICT[c])
 
-        if len(label) == 8:
+        if len(label) == 9:
             if self.check(label) == False:
                 print(imgname)
                 assert 0, "Error label ^~^!!!"
@@ -58,6 +58,8 @@ class LPRDataLoader(Dataset):
         return Image, label, len(label)
 
     def transform(self, img):
+        if img.shape[2] == 4:  # 如果图像是4通道的
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)  # 将图像从BGRA转换为BGR
         img = img.astype('float32')
         img -= 127.5
         img *= 0.0078125

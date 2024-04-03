@@ -53,7 +53,7 @@ def Estimated_speed(outputs, output, id, fps, cint, flag=0):
         if w1 / h1 >= 2 or w2 / h2 >= 2 or flag == 1:
             dpix = 1.8 / height
         else:
-            dpix = 2 / width * 3  # 像素真实距离比 车宽2 *3为修正值
+            dpix = 2 / width * 5  # 像素真实距离比 车宽2 *3为修正值
 
         speed = d * dpix * 3.6 * fps / cint
 

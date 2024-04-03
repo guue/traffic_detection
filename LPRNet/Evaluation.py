@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 
-from model.LPRNET import LPRNet, CHARS
+from model.LPRNet import LPRNet
 from model.STN import STNet
-from data.load_data import LPRDataLoader, collate_fn
+from data.load_data import LPRDataLoader, collate_fn,CHARS
 import torch
 from torch.utils.data import DataLoader
 import numpy as np
@@ -98,7 +98,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='LPR Evaluation')
     parser.add_argument('--img_size', default=(94, 24), help='the image size')
-    parser.add_argument('--img_dirs', default="./data/ccpd_weather", help='the images path')
+    parser.add_argument('--img_dirs', default="LPRNet/data/validation", help='the images path')
     parser.add_argument('--dropout_rate', default=0.5, help='dropout rate.')
     parser.add_argument('--batch_size', default=128, help='batch size.')
     args = parser.parse_args()
@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
     lprnet = LPRNet(class_num=len(CHARS), dropout_rate=args.dropout_rate)
     lprnet.to(device)
-    lprnet.load_state_dict(torch.load('weights/Final_LPRNet_model.pth', map_location=lambda storage, loc: storage))
+    lprnet.load_state_dict(torch.load('weights/lprnet_93.12._model.pth', map_location=lambda storage, loc: storage))
 #    checkpoint = torch.load('saving_ckpt/lprnet_Iter_023400_model.ckpt')
 #    lprnet.load_state_dict(checkpoint['net_state_dict'])
     lprnet.eval() 
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     
     STN = STNet()
     STN.to(device)
-    STN.load_state_dict(torch.load('weights/Final_STN_model.pth', map_location=lambda storage, loc: storage))
+    STN.load_state_dict(torch.load('weights/stn_93.12_model.pth', map_location=lambda storage, loc: storage))
 #    checkpoint = torch.load('saving_ckpt/stn_Iter_023400_model.ckpt')
 #    STN.load_state_dict(checkpoint['net_state_dict'])
     STN.eval()
@@ -131,5 +131,5 @@ if __name__ == '__main__':
     ACC = eval(lprnet, STN, dataloader, dataset, device)
     print('the accuracy is {:.2f} %'.format(ACC*100))
     
-    visualize_stn()
+
 
