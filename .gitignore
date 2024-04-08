@@ -7,9 +7,13 @@
 *.json
 *.json
 *.mov
-*.pth
-*.pt
+
 /__pycache__
 *.pyc
 *.pyc
 __pycache__/Estimated_speed.cpython-38.pyc
+/LPRNet/saving_ckpt
+/runs
+/ultralytics/runs
+ultralytics/yolov8n.pt
+/YOLOv9/runs
