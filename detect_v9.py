@@ -854,7 +854,7 @@ def main(opt):
     logger.info(f"Initializing VideoTracker with options: {opt}")
     video_tracker = VideoTracker(opt)
     logger.info('Init successfully')
-    video_tracker.change_video("D:/traffic_detection/video_20s.mp4")
+    # video_tracker.change_video("D:/traffic_detection/video_20s.mp4")
     video_tracker.start_detection()  # 开始检测
     try:
         while video_tracker.is_running:

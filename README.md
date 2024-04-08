@@ -235,7 +235,17 @@ update:
 通过**Yolov8**定位车牌目标位置 **LPRNET**对车牌字符进行识别
 
 在违规车辆增加其图片crop type:image 
-
+```python
+    if SpeedOverFlag and self.names[int(cls)] in ['car', 'bus', 'truck']:
+        car_status_dict['illegal'] = True
+        car_status_dict['illegal_behavior'].append('超速')
+        if id is not None:
+            crop = save_one_box(torch.Tensor(bboxes), imc, BGR=True, save=False)
+            path = Path(self.save_dir / 'speedover' / str(int(id)) / f'{speed}.jpg')
+            path.parent.mkdir(parents=True, exist_ok=True)  # make directory
+            Image.fromarray(crop[..., ::-1]).save(str(path), quality=95,
+                                                  subsampling=0)  # save RGB
+```
 
 ## 想实现的
 将距离的远近做成**热力图**形式，车辆周边一个距离没有其他车辆标绿 有车辆标黄 重叠标红

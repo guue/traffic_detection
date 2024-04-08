@@ -1,19 +1,13 @@
 .vscode/
 *.jpg
 *.txt
-*.mp4
-4.6.0'
-4.8.0'
+
 *.json
 *.json
 *.mov
 
 /__pycache__
 *.pyc
-*.pyc
-__pycache__/Estimated_speed.cpython-38.pyc
 /LPRNet/saving_ckpt
-/runs
 /ultralytics/runs
 ultralytics/yolov8n.pt
-/YOLOv9/runs
