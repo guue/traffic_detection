@@ -1,4 +1,5 @@
 import argparse
+import math
 import shutil
 import threading
 import queue
@@ -39,8 +40,6 @@ from YOLOv9.utils.plots import Annotator, colors, save_one_box
 from strong_sort.utils.parser import get_config
 from strong_sort.strong_sort import StrongSORT
 
-from calculateDirection import calculateDirection
-from Estimated_speed import Estimated_speed
 from draw import *
 from zebra_detector.test import detect_zoo
 
@@ -52,6 +51,45 @@ handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)  # 设置文件的log格式
 logger.addHandler(handler)
+
+
+def parse_str2dir(status_str):
+    """
+    将存储在car_status中的字符串转换为字典。
+    特别处理illegal_behavior作为列表，并处理其内部的逗号分隔问题。
+
+    参数:
+        status_str (str): 字符串，格式为 "key: value, key: value, ..."
+
+    返回:
+        dict: 转换后的字典。
+    """
+    status_dict = {}
+
+    # 尝试按正常键值对进行分割
+    items = status_str.split(", ")
+    for item in items:
+        if ": " in item:
+            key, value = item.split(": ", 1)
+            if value.lower() == 'true':
+                value = True
+            elif value.lower() == 'false':
+                value = False
+            elif key == 'illegal_behavior':
+                # 处理illegal_behavior为列表的情况
+                # 由于illegal_behavior的值可能已被逗号分隔，我们需要特别处理这个字段
+                # 这里不使用分隔符替换的方法，而是直接分割可能存在的单一或多个违规行为
+                value = [v.strip() for v in value.split("|")]
+            status_dict[key] = value
+        else:
+            # 对于无法正常解析的情况，尤其是illegal_behavior，我们将它直接作为列表的单个元素处理
+            # 这里的处理意味着我们假定无法解析的项都属于illegal_behavior
+            if 'illegal_behavior' not in status_dict:
+                status_dict['illegal_behavior'] = [item.strip()]
+            else:
+                status_dict['illegal_behavior'].append(item.strip())
+
+    return status_dict
 
 
 def clear_directory(dir_path):
@@ -109,7 +147,7 @@ class VideoTracker:
         self.imgsz = check_img_size(opt.imgsz, s=self.stride)
         self.batchsize = 1
         self.vid_stride = opt.vid_stride
-        self.dataset = self.dateset_Loader()
+
         self.vid_writer = None
 
         # Load StrongSORT
@@ -137,7 +175,8 @@ class VideoTracker:
         self.outputs = [None] * self.batchsize
         self.outputs_prev = []
 
-
+        self.car_locations_history = {}  # {id: [(frame_idx, (x1, y1)), ...], ...}
+        self.car_history = {}  # 新增一个字典来保存每辆车的历史状态信息
 
         """
         在一开始 illegal 默认为 ''  不是None
@@ -150,14 +189,15 @@ class VideoTracker:
         self.car_licence = {}  # {id:{license:licence,conf:conf},....}
 
         self.car_status = []  # 存放每辆车的状态 ["id: license: speed: illegal: ","id: license: speed: illegal: ",..]
-        self.class_counts = {} # {car:2,person:1,...}
+        self.illegal_car_status = []  # 存放违规车辆信息
+        self.class_counts = {}  # {car:2,person:1,...}
 
         # Other parameters
         self.conf_thres = opt.conf_thres
         self.iou_thres = opt.iou_thres
         self.classes = opt.classes
         self.agnostic_nms = opt.agnostic_nms
-        self.save_txt = opt.save_txt
+
         self.save_vid = opt.save_vid
         self.hide_labels = opt.hide_labels
         self.augment = opt.augment
@@ -167,20 +207,113 @@ class VideoTracker:
         self.vehicle_count = 0
         self.counted_ids = set()  # 初始化一个集合，用于存储已经计数过的ID
         self.vehicle_counts_over_time = {}  # 时间戳: 车辆总数
-
         self.fps = 0
 
+    def change_video(self, vid_path):
+        self.source = vid_path
+
+    def get_centers(self, box):
+        x_center = (box[0] + box[2]) / 2
+        y_center = (box[1] + box[3]) / 2
+        centers = (x_center, y_center)
+        return centers
+
+    def get_size_from_bbox(self, bbox):
+        """
+        根据边界框计算尺寸。
+        :param bbox: 边界框，格式为 (x1, y1, x2, y2)
+        :return: (width, height) 宽度和高度
+        """
+        x1, y1, x2, y2 = bbox
+        width = x2 - x1
+        height = y2 - y1
+        return width, height
+
     def get_car_status(self):
-        # 返回最新的车辆状态列表
+        """
+        返回最新的车辆状态列表
+        ['id: 1, licence: , speed: , illegal: False, illegal: ',......]
+        """
+
         return self.car_status
 
     def get_class_counts(self):
-        # 返回最新的类别统计
+        """
+        返回最新的类别统计
+        {car: 5, truck: 7}
+        """
         return self.class_counts
 
     def get_vehicle_count(self):
-        # 返回当前的车流量计数
+        # 返回当前的车流量计数 int
         return self.vehicle_count
+
+    def get_illegal_car(self):
+        """
+        返回 违规车辆行为
+        ['id: 5, licence: , illegal_behavior: 超速, 变道', 'id: 3, licence: , illegal_behavior: 超速']
+        """
+        return self.illegal_car_status
+
+    def update_location_history(self, car_id, frame_idx, center, size):
+        if car_id not in self.car_locations_history:
+            self.car_locations_history[car_id] = []
+        self.car_locations_history[car_id].append((frame_idx, center, size))
+        if len(self.car_locations_history[car_id]) > 10:
+            self.car_locations_history[car_id].pop(0)
+
+    def calculate_average_speed(self, car_id, fps, actual_length=4.5, actual_width=1.8):
+        # 确保车辆位置历史中有足够的数据
+        if car_id not in self.car_locations_history or len(self.car_locations_history[car_id]) < 2:
+            return None, False
+        # 获取车辆的位置和尺寸历史
+        locations_sizes = self.car_locations_history[car_id]
+        # 选择一个预设的车辆尺寸（以米为单位）
+        # 计算总移动距离（像素）
+        total_pixel_distance = 0.0
+        for i in range(1, len(locations_sizes)):
+            prev_location, prev_size = locations_sizes[i - 1][1], locations_sizes[i - 1][2]
+            current_location, current_size = locations_sizes[i][1], locations_sizes[i][2]
+            """
+            current_location 为中心点坐标
+            """
+            pixel_distance = math.sqrt(
+                (current_location[0] - prev_location[0]) ** 2 + (current_location[1] - prev_location[1]) ** 2)
+            total_pixel_distance += pixel_distance
+        # 获取最新的车辆尺寸（像素）
+        _, _, current_size = locations_sizes[-1]
+        pixel_width, pixel_height = current_size
+        # 摄像头为倾斜角 取几何平均值做真实距离映射
+        dpix = math.sqrt((actual_length / pixel_height) * (actual_width / pixel_width)) * 3.3
+        # 计算总移动距离（米）
+        total_real_distance = total_pixel_distance * dpix
+        # 计算总时间（秒）
+        total_time_seconds = (locations_sizes[-1][0] - locations_sizes[0][0]) / fps
+        # 计算平均速度（km/h）
+        average_speed_kmh = (total_real_distance / total_time_seconds) * 3.6
+        # 检测是否超速
+        SpeedOver = average_speed_kmh > 50  # 假定超过50km/h为超速
+        return average_speed_kmh, SpeedOver
+
+    def calculate_direction_for_car(self, car_id):
+        if car_id not in self.car_locations_history or len(self.car_locations_history[car_id]) < 2:
+            return ''
+        # 获取车辆的最新两个位置
+        prev_location = self.car_locations_history[car_id][-2][1]  # 倒数第二个位置
+        current_location = self.car_locations_history[car_id][-1][1]  # 最后一个位置
+        # 计算中心点的变化
+        dx = current_location[0] - prev_location[0]
+        dy = current_location[1] - prev_location[1]
+        # 根据dx和dy的关系判断方向
+        if dy > 0 and 3 * abs(dy) >= abs(dx):
+            return 'DOWN'
+        if dy < 0 and 1.5 * abs(dy) >= abs(dx):
+            return 'UP'
+        if dx > 0 and abs(dx) >= abs(dy):
+            return 'RIGHT'
+        if dx < 0 and abs(dx) >= abs(dy):
+            return "LEFT"
+        return 'UP'
 
     def license_plate_detection(self, input_queue, output_queue):
         while True:
@@ -232,33 +365,90 @@ class VideoTracker:
         plt.title(title + 'Count')
         plt.xlabel(xlabel)
         plt.xticks(rotation=270)
-        plt.ylabel(title )
+        plt.ylabel(title)
         plt.grid(True)
         # 保存图表到指定路径
-        plt.savefig(save_path,bbox_inches='tight')
+        plt.savefig(save_path, bbox_inches='tight')
         plt.close()  # 关闭图表窗口，释放资源
 
     def update_or_add(self, car_status_dict):
         """
-        car_status_dict即将要添加的车辆状态信息
+        car_status_dict即将要添加的车辆状态信息。
+        无论是否有现存的车牌信息，都应保留违规为True的信息。
+        根据新的车辆状态信息更新或添加车辆状态，
+        同时考虑历史违规信息。
         """
-        # 准备更新或添加的车辆状态信息字符串，移除字典表示的开头和结尾的 '{' 和 '}'
-        car_status_str = ", ".join([f"{k}: {v}" for k, v in car_status_dict.items()])
+        car_id = car_status_dict['id']
+        new_illegal = car_status_dict.get('illegal', False)
+        new_illegal_behavior = car_status_dict['illegal_behavior']
+
+        # 检查该车辆是否已有历史记录
+        if car_id in self.car_history:
+            history = self.car_history[car_id]
+            prev_illegal = history.get('illegal', False)
+            prev_illegal_behavior = history['illegal_behavior']
+
+            # 如果之前的违规信息为True，且新的信息中违规状态不是True，则保留历史中的违规信息
+            if prev_illegal and not new_illegal:
+                car_status_dict['illegal'] = True
+                car_status_dict['illegal_behavior'] = prev_illegal_behavior
+            elif prev_illegal and new_illegal:
+                if prev_illegal_behavior != new_illegal_behavior:
+                    car_status_dict['illegal_behavior'] = prev_illegal_behavior + new_illegal_behavior
+                else:
+                    car_status_dict['illegal_behavior'] = prev_illegal_behavior
+
+        # 更新车辆的历史记录为最新的状态
+        self.car_history[car_id] = car_status_dict
         updated = False
         for i, status_str in enumerate(self.car_status):
-            # 从当前列表中的车辆状态字符串中提取车牌信息
-            licence_existing = [pair.split(": ")[1] for pair in status_str.split(", ") if "licence" in pair][0]
+            # 从当前列表中的车辆状态字符串中解析出字典
+            existing_info = parse_str2dir(status_str)
+            licence_existing = existing_info.get('licence', '')
 
             # 检查是否满足更新条件：车牌号匹配且不为空
             if licence_existing == car_status_dict['licence'] and licence_existing != '' and car_status_dict[
                 'licence'] != '':
-                # 更新现有条目
+                # 根据car_status_dict重新构建状态字符串
+                illegal_behaviors_str = ", ".join(car_status_dict['illegal_behavior'])
+                car_status_str = f"id: {car_status_dict['id']}, licence: {car_status_dict['licence']}, speed: {car_status_dict['speed']}, illegal: {car_status_dict['illegal']}, illegal_behavior: {illegal_behaviors_str}"
                 self.car_status[i] = car_status_str
                 updated = True
                 break
+
         if not updated:
-            # 如果未找到匹配的车牌号来更新，则添加新的车辆状态信息
+            illegal_behaviors_str = ", ".join(car_status_dict['illegal_behavior'])
+            car_status_str = f"id: {car_status_dict['id']}, licence: {car_status_dict['licence']}, speed: {car_status_dict['speed']}, illegal: {car_status_dict['illegal']}, illegal_behavior: {illegal_behaviors_str}"
             self.car_status.append(car_status_str)
+
+    def update_illegal_car_status(self):
+        """
+        从car_status中整合违规信息到illegal_car_status列表。
+        """
+        for status_str in self.car_status:
+            car = parse_str2dir(status_str)  # 将字符串转换为字典
+
+            if car['illegal']:  # 检查是否违规
+                # 初始化一个变量，用于记录是否已经更新了违规信息
+                updated = False
+
+                for i, existing_str in enumerate(self.illegal_car_status):
+                    existing = parse_str2dir(existing_str)  # 将字符串转换为字典
+
+                    if existing['id'] == car['id'] or (existing['licence'] == car['licence'] and car[
+                        'licence'] != ''):  # 查找是否已存在于illegal_car_status中
+                        # 如果已存在，则更新违规信息
+                        illegal_behaviors_str = ", ".join(car['illegal_behavior'])
+                        updated_str = f"id: {car['id']}, licence: {car['licence']}, illegal_behavior: {illegal_behaviors_str}"
+                        self.illegal_car_status[i] = updated_str  # 更新列表中的字符串
+                        updated = True
+                        break
+
+                if not updated:
+                    # 如果不存在，则添加新的违规车辆信息
+                    illegal_behaviors_str = ", ".join(car['illegal_behavior'])
+                    new_str = f"id: {car['id']}, licence: {car['licence']}, illegal_behavior: {illegal_behaviors_str}"
+                    self.illegal_car_status.append(new_str)
 
     def loadmodel(self, weights):
         model = DetectMultiBackend(Path(weights), device=self.device, dnn=self.dnn, fp16=self.half)
@@ -279,7 +469,7 @@ class VideoTracker:
     def dateset_Loader(self):
 
         is_file = Path(self.source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
-        is_url = self.source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
+        is_url = self.source.lower().startswith(('rtsp://', 'rtmp://', 'https://', 'https://'))
         screenshot = self.source.lower().startswith('screen')
         self.webcam = self.source.isnumeric() or self.source.endswith('.txt') or (is_url and not is_file)
         if is_url and is_file:
@@ -312,14 +502,14 @@ class VideoTracker:
 
     @smart_inference_mode()
     def run(self):
+        self.dataset = self.dateset_Loader()
+
         while self.is_running:
-
-            global cardiection, CarLicence, label
-
+            global cardiection, CarLicence, label, speed
             video_start_time = datetime.now()
             # 上次记录时间
             last_record_time = video_start_time
-            # 记录间隔，这里设置为2秒
+            # 记录间隔
             record_interval = timedelta(seconds=15)
             self.license_thread = threading.Thread(
                 target=self.license_plate_detection,
@@ -328,8 +518,8 @@ class VideoTracker:
             #                                 args=(self.zebra_input_queue, self.zebra_output_queue))
             self.license_thread.start()
             # zebra_thread.start()
-            self.gpu_memory = {}
 
+            self.gpu_memory = {}
             self.yolo_model.warmup(imgsz=(1 if self.pt or self.yolo_model.triton else self.bs, 3, *self.imgsz))
 
             frame_count = 0
@@ -343,7 +533,6 @@ class VideoTracker:
                 self.fps = vid_cap.get(cv2.CAP_PROP_FPS)
                 current_time = datetime.now()  # 当前帧开始检测的时间
                 time_elapsed = current_time - last_record_time
-
 
                 # 斑马线检测
                 # self.zebra_input_queue.put(im)
@@ -363,7 +552,7 @@ class VideoTracker:
                 #         label_text = f'Zebra Crossing: {zebra_label} {conf_zoo}'
                 #         # annotator.box_label(boxes,label_text,color=(0,255,0))   #斑马线绘制
 
-                if time_elapsed >= record_interval:  # 每2秒记录一次
+                if time_elapsed >= record_interval:
                     self.vehicle_counts_over_time[current_time.strftime('%H:%M:%S')] = self.vehicle_count
                     self.vehicle_count = 0  # 重置计数
                     self.counted_ids.clear()  # 清空已计数的车辆ID集合
@@ -385,9 +574,7 @@ class VideoTracker:
                         else:
                             p, im0, frame = path, im0s.copy(), getattr(self.dataset, 'frame', 0)
                         p = Path(p)  # to Path
-                        txt_path = str(self.save_dir / 'labels' / p.stem) + (
-                            '' if self.dataset.mode == 'image' else f'_{frame}')  # im.txt output/track/exp/labels
-                        (self.save_dir / 'labels' if self.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
+                        self.save_dir.mkdir(parents=True, exist_ok=True)
                         curr_frames[i] = im0
                         imc = im0.copy()
                         annotator = Annotator(im0, line_width=1, example=str(self.names), pil=True, font='simkai.ttf',
@@ -402,8 +589,8 @@ class VideoTracker:
                                 n = (det[:, -1] == c).sum()  # detections per class
 
                                 # 统计类别计数
-                                if self.names[int(c)] in ['person', 'bicycle', 'biker', 'car', 'pedestrian', 'motorcycle',
-                                                          'bus', 'truck']:  # 红绿灯不统计
+                                if self.names[int(c)] in ['person', 'bicycle', 'biker', 'car', 'pedestrian',
+                                                          'motorcycle', 'bus', 'truck']:  # 红绿灯不统计
                                     self.class_counts[self.names[int(c)]] = n.item()
 
                             xywhs = xyxy2xywh(det[:, 0:4])
@@ -430,8 +617,14 @@ class VideoTracker:
                                     id = output[4]
                                     cls = output[5]
                                     car_status_dict = {"id": int(id), "licence": '', "speed": '',
-                                                       "illegal": ''}
+                                                       "illegal": False, "illegal_behavior": []}
+
                                     if self.names[int(cls)] in ['car', 'bus', 'truck']:
+                                        car_center = self.get_centers(bboxes)
+                                        size = self.get_size_from_bbox(bboxes)
+
+                                        self.update_location_history(id, frame_count, car_center, size)
+
                                         if id not in self.counted_ids:
                                             self.vehicle_count += 1
                                             self.counted_ids.add(id)  # 添加ID到已计数集合中
@@ -448,20 +641,24 @@ class VideoTracker:
                                             logger.warning("Invalid crop coordinates.")
 
                                         # 测速
-                                        if len(self.outputs_prev) == 2:
-                                            cardiection = calculateDirection(self.outputs_prev[-2], output, id)
-                                            if cardiection == 'LEFT' or cardiection == 'RIGHT':
-                                                speed, SpeedOverFlag = Estimated_speed(self.outputs_prev[-2], output, id,
-                                                                                       self.fps, self.vid_stride, 1)
-                                            else:
-                                                speed, SpeedOverFlag = Estimated_speed(self.outputs_prev[-2], output, id,
-                                                                                       self.fps, self.vid_stride)
-                                            if speed != ' ':
-                                                speed = round(speed, 1)
-                                                bbox_speed = str(speed) + "km/h"
-                                            else:
-                                                bbox_speed = ''
-                                            car_status_dict['speed'] = bbox_speed
+                                        cardiection = self.calculate_direction_for_car(id)
+                                        if self.names[int(cls)] == 'bus':
+                                            speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps,
+                                                                                                actual_length=8,
+                                                                                                actual_width=2.4)
+                                        elif self.names[int(cls)] == 'truck':
+                                            speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps,
+                                                                                                actual_length=6.2,
+                                                                                                actual_width=2.4)
+                                        else:
+                                            speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps)
+
+                                        if speed != None:
+                                            speed = round(speed, 1)
+                                            bbox_speed = str(speed) + "km/h"
+                                        else:
+                                            bbox_speed = ''
+                                        car_status_dict['speed'] = bbox_speed
                                     # 车牌
                                     while not self.license_output_queue.empty():
                                         thread_id, license_detection_result = self.license_output_queue.get()
@@ -477,28 +674,21 @@ class VideoTracker:
                                                 label_licence = ''.join(label_licence)
                                                 self.car_licence[thread_id] = {'licence': label_licence,
                                                                                'confidence': label_conf}
+
                                     # 超速处理
                                     if SpeedOverFlag and self.names[int(cls)] in ['car', 'bus', 'truck']:
-
+                                        car_status_dict['illegal'] = True
+                                        car_status_dict['illegal_behavior'].append('超速')
                                         if id is not None:
-                                            save_one_box(torch.Tensor(bboxes), imc,
-                                                         file=self.save_dir / 'speedover' / self.names[int(cls)] /
-                                                              f"{str(int(id))}" / f'{speed}.jpg',
-                                                         BGR=True)
+                                            crop = save_one_box(torch.Tensor(bboxes), imc, BGR=True, save=False)
+                                            path = Path(self.save_dir / 'speedover' / str(int(id)) / f'{speed}.jpg')
+                                            path.parent.mkdir(parents=True, exist_ok=True)  # make directory
+                                            Image.fromarray(crop[..., ::-1]).save(str(path), quality=95,
+                                                                                  subsampling=0)  # save RGB
+
                                     if id in self.car_licence:
                                         car_status_dict['licence'] = self.car_licence[id]['licence']
-                                    # 没啥用 暂时留着 后续没用就删
-                                    if self.save_txt:
-                                        # to MOT format
-                                        bbox_left = output[0]
-                                        bbox_top = output[1]
-                                        bbox_w = output[2] - output[0]
-                                        bbox_h = output[3] - output[1]
-                                        # Write MOT compliant results to file
-                                        with open(txt_path + '.txt', 'a') as f:
-                                            f.write(
-                                                ('%g ' * 12 + '\n') % (frame + 1, id, conf, cls, bbox_left,  # MOT format
-                                                                       bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
+
                                     # 图像检测信息框绘制
                                     if self.save_vid or self.show_vid:  # Add bbox to image
                                         c = int(cls)  # integer class
@@ -517,6 +707,7 @@ class VideoTracker:
 
                                     # 将车辆状态信息放到一个汇总列表里 以字符串形式
                                     self.update_or_add(car_status_dict)
+                                    self.update_illegal_car_status()
 
                         else:
                             self.strongsort_list[i].increment_ages()
@@ -590,10 +781,7 @@ class VideoTracker:
                             Path('D:/traffic_detection/output/track/video/' + str(video_name)).with_suffix('.mp4'))
                         self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                     self.vid_writer.write(self.im0_s)
-            self.is_running=False
-
-
-
+            self.is_running = False
 
         # 循环结束后，确保释放资源
         if self.vid_writer:
@@ -611,28 +799,25 @@ class VideoTracker:
                          'vehicle',
                          'Time')
         self.plot_counts(self.gpu_memory, (str(self.save_dir) + '/' + 'gpu memory count'), 'gpu memory', 'time')
-        if self.save_txt or self.save_vid:
-            s = f"\n{len(list(self.save_dir.glob('labels/*.txt')))} tracks saved to {self.save_dir / 'labels'}" if self.save_txt else ''
-            logger.info(f"Results saved to {colorstr('bold', self.save_dir)}{s}")
-
-
-
-
-
-
+        if self.save_vid:
+            logger.info(f"Results saved to {colorstr('bold', self.save_dir)}")
 
     def start_detection(self):
         # 在独立线程中启动检测过程
         self.is_running = True
         self.detection_thread = threading.Thread(target=self.run)
         self.detection_thread.start()
+
     def stop_detection(self):
         with self.lock:
             self.running = False
         self.detection_thread.join()
+
     def is_detection_running(self):
         # 提供一个方法来检查检测是否正在运行
         return self.is_running
+
+
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--yolo-weights', nargs='+', type=str, default=WEIGHTS / 'yolov9-c.pt',
@@ -646,7 +831,6 @@ def parse_opt():
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--show-vid', default=True, action='store_true', help='display tracking video results')
-    parser.add_argument('--save-txt', default=True, action='store_true', help='save results to *.txt')
     parser.add_argument('--save-vid', default=True, action='store_true', help='save video tracking results')
     parser.add_argument('--augment', action='store_true', help='')
     parser.add_argument('--classes', default=[0, 1, 2, 3, 5, 7, 9], nargs='+', type=int,
@@ -670,6 +854,7 @@ def main(opt):
     logger.info(f"Initializing VideoTracker with options: {opt}")
     video_tracker = VideoTracker(opt)
     logger.info('Init successfully')
+    video_tracker.change_video("D:/traffic_detection/video_20s.mp4")
     video_tracker.start_detection()  # 开始检测
     try:
         while video_tracker.is_running:
@@ -677,10 +862,13 @@ def main(opt):
             car_status = video_tracker.get_car_status()
             class_counts = video_tracker.get_class_counts()
             vehicle_count = video_tracker.get_vehicle_count()
-            #
-            if car_status:
-                print(f"Current car status: {video_tracker.car_status}")
-            time.sleep(0.01)
+            illegal_car = video_tracker.get_illegal_car()
+            # print(illegal_car)
+
+
+            # if car_status:
+            #     print(f"Current car status: {video_tracker.car_status}")
+            time.sleep(1)
 
             # logger.info(f"Current class counts: {class_counts}")
             # logger.info(f"Current vehicle count: {vehicle_count}")
@@ -691,4 +879,3 @@ def main(opt):
 if __name__ == "__main__":
     opt = parse_opt()
     main(opt)
-

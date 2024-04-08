@@ -70,66 +70,17 @@ python python detect_v9.py --source 0 --yolo-weights yolov7.pt --classes 0  # tr
 
 
 
-## 测速实现
-首先使用提前设定好的车辆真实宽度和检测出来的车辆像素宽度求出真实距离和像素距离的比值为c，再使用每辆车的前后两帧框的中心坐标计算出两帧之间移动的像素距离。利用这个比值和像素距离做映射，就可以求出两帧之间车辆移动的真实距离。然后距离除以两帧之间的时间，就是速度了。本测速算法中将车辆真实移动距离与像素移动距离看成是线性关系，仅在监控相机轴线与车辆移动方向垂直时才能成立，并且检测出来的车辆框在空间上会产生一定形变，使得真实距离和像素距离的映射关系不准确。
-```bash
-
-def Estimated_speed(outputs, output, id, fps, width):
-    SpeedOver = False
-    prev_IDs = []  # 之前的ids
-    work_IDs = []  # 有效的ids
-    work_locations = output  # 当前帧数据：中心点x坐标、中心点y坐标、目标序号、车辆类别、车辆像素宽度
-    work_prev_locations = []  # 上一帧数据，数据格式相同
-    for i in range(len(outputs)):
-        prev_IDs.append(outputs[i][4])  # 获得前一帧中跟踪到车辆的ID
-
-    for m, n in enumerate(prev_IDs):  # 进行筛选，找到在两帧图像中均被检测到的有效车辆ID，存入work_IDs中
-        if id == n:
-            work_IDs.append(m)
-            work_prev_locations = outputs[m]  # 将当前帧有效检测车辆的信息存入work_locations中
 
 
 
-    if len(work_IDs) > 0:
-        locations = [0,0]
-        prev_locations = [0,0]  # 存放中心点坐标
-        bbox_prev = work_prev_locations[0:4]
-        bbox = work_locations[0:4]
-        p1, p2 = (int(bbox_prev[0]), int(bbox_prev[1])), (int(bbox_prev[2]), int(bbox_prev[3]))
-        print(p1)
-        prev_locations[0] = (p2[0] - p1[0]) / 2 + p1[0]
-        prev_locations[1] = (p2[1] - p1[1]) / 2 + p1[1]
-        x1, x2 = (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))
-        locations[0] = (x2[0] - x1[0]) / 2 + x1[0]
-        locations[1] = (x2[1] - x1[1]) / 2 + x1[1]
-        d=math.sqrt((locations[0] - prev_locations[0]) ** 2 + (locations[1] - prev_locations[1]) ** 2)
-
-        speed = ((d /width ) *2.5*3.6* fps  )  #像素速度
-
-        if speed > 60:
-            SpeedOver = True
-
-        print(speed)
-        # speed = 11.3
-        speed = str(round(speed, 1)) + "km/h"
-        return speed,SpeedOver
-    return " ",SpeedOver
-```
-## 车牌识别
-通过**MTCNN**定位车牌目标位置 **LPRNET**对车牌字符进行识别 目标识别对监控画质要求高 因数据集问题 目前无法识别绿牌
-
-## 前端调用
-前端至少需要能调用视频（由一帧帧图片组成）以及字典 和 列表
 
 ## 追踪
 ```bash
 $ python detect_v9.py --source .....
 ```
+
 目前可以通过yolov9进行检测，速度会比yolov7要更高，且检测精度更好,目前模型用的官方**yolov9-c.pt** 模型，数据集为coco
 
-## 待实现
-此算法检测的速度不准确 低于正常速度 还需通过**单目测距** 
-yolov9数据集制作以及算法改进
 
 ## 2024/3/30
 **车牌检测线程**
@@ -138,12 +89,6 @@ yolov9数据集制作以及算法改进
 
 **斑马线检测线程**
 
-增加后处理时间：
-
-![img_1.png](img_1.png)
-增加前处理时间：
-
-![img.png](img.png)
 
 ## 前端要注意的点
 **车辆截图保存**
@@ -151,22 +96,152 @@ yolov9数据集制作以及算法改进
 
 **实时车流统计**
 目前车流统计是通过字典格式保存 格式{类别：数量}
+
 前端需要实时读入 并实时绘制相应统计图
 
 **实时图片**
-前端可直接读入self.image_display_queue此队列里的图片进行显示
+前端可直接读入**self.image_display_queue** 此队列里的图片进行显示
 
 ## 设想
 高清摄像头 可以适配 人脸检测（应用于违规抓拍后的识别） 驾驶员行为检测（玩手机 喝水等等）  可以在主界面跳转两个系统 应用在不同摄像头以及道路上 更具有实际意义
 
 ## 2024/4/3 
 update:
+
 更新车牌检测模型位yolov8
+
 更改线程处理方式 修复并发线程无法及时检测车牌的问题
 
 ## 2024/4/4
 
-在运行代码中 使用self.is_running 指示运行状态 方便调整
+在运行代码中 使用**self.is_running** True 为运行 False 为不在运行  指示运行状态 方便调整
 
-同时新增det_thread 通过线程启动检测，可以在主线程中添加更多的处理细节 比如获取车辆信息表等
+同时新增**start_detection**函数 通过线程启动检测，可以在主线程中添加更多的处理细节 比如获取车辆信息表等
+使用方法：
+```python
+    logger.info(f"Initializing VideoTracker with options: {opt}")
+    video_tracker = VideoTracker(opt)
+    logger.info('Init successfully')
+    video_tracker.change_video("D:/traffic_detection/video_20s.mp4")
+    video_tracker.start_detection()  # 开始检测
+```
 
+
+
+
+## 2024/4/8
+给出多个返回值函数
+```python
+   def get_car_status(self):
+        """
+        返回最新的车辆状态列表
+        ['id: 1, licence: , speed: , illegal: False, illegal: ',......]
+        """
+
+        return self.car_status
+
+    def get_class_counts(self):
+        """
+        返回最新的类别统计
+        {car: 5, truck: 7}
+        """
+        return self.class_counts
+
+    def get_vehicle_count(self):
+        # 返回当前的车流量计数 int
+        return self.vehicle_count
+
+    def get_illegal_car(self):
+        """
+        返回 违规车辆行为
+        ['id: 5, licence: , illegal_behavior: 超速, 变道', 'id: 3, licence: , illegal_behavior: 超速']
+        """
+        return self.illegal_car_status
+```
+使用示例：
+```python
+    video_tracker = VideoTracker(opt)
+    video_tracker.start_detection()  # 开始检测
+    try:
+        while video_tracker.is_running:
+            # 每隔一定时间获取并打印实时数据
+            car_status = video_tracker.get_car_status()
+            class_counts = video_tracker.get_class_counts()
+            vehicle_count = video_tracker.get_vehicle_count()
+            illegal_car = video_tracker.get_illegal_car()
+```
+增加更换视频源函数
+```python
+    def change_video(self,vid_path):
+        self.source=vid_path
+```
+使用示例：
+```python 
+    video_tracker = VideoTracker(opt)
+    video_tracker.change_video("D:/traffic_detection/video_20s.mp4")
+    video_tracker.start_detection()  # 开始检测
+```
+修改测速、方向、更新信息等多个函数
+## 测速实现
+首先使用提前设定好的车辆真实值与检测值的比例求几何平均 防止宽度和长度单一值受摄像头距离影响，同时对不同车型的真实长宽值设定不同的值
+
+**不再使用前后两帧进行测速**，而是选取**最多十帧**的距离求**平均**速度
+```python
+
+    def calculate_average_speed(self, car_id, fps, flag=0):
+        # 确保车辆位置历史中有足够的数据
+        if car_id not in self.car_locations_history or len(self.car_locations_history[car_id]) < 2:
+            return None, False
+        # 获取车辆的位置和尺寸历史
+        locations_sizes = self.car_locations_history[car_id]
+        # 选择一个预设的车辆尺寸（以米为单位）
+        actual_length = 4.5  # 车辆长度，单位为米
+        actual_width = 1.8  # 车辆宽度，单位为米
+        # 计算总移动距离（像素）
+        total_pixel_distance = 0.0
+        for i in range(1, len(locations_sizes)):
+            prev_location, prev_size = locations_sizes[i - 1][1], locations_sizes[i - 1][2]
+            current_location, current_size = locations_sizes[i][1], locations_sizes[i][2]
+            pixel_distance = math.sqrt(
+                (current_location[0] - prev_location[0]) ** 2 + (current_location[1] - prev_location[1]) ** 2)
+            total_pixel_distance += pixel_distance
+        # 获取最新的车辆尺寸（像素）
+        _, _, current_size = locations_sizes[-1]
+        pixel_width, pixel_height = current_size
+        # 摄像头为倾斜角 取几何平均值做真实距离映射
+        dpix = math.sqrt((actual_length / pixel_height) * (actual_width / pixel_width)) 
+        # 计算总移动距离（米）
+        total_real_distance = total_pixel_distance * dpix
+        # 计算总时间（秒）
+        total_time_seconds = (locations_sizes[-1][0] - locations_sizes[0][0]) / fps
+        # 计算平均速度（km/h）
+        average_speed_kmh = (total_real_distance / total_time_seconds) * 3.6
+        # 检测是否超速
+        SpeedOver = average_speed_kmh > 50  # 假定超过40km/h为超速
+        return average_speed_kmh, SpeedOver
+    
+    if self.names[int(cls)] == 'bus':
+        speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps,
+                                                            actual_length=8,
+                                                            actual_width=2.4)
+    elif self.names[int(cls)] == 'truck':
+        speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps,
+                                                            actual_length=6.2,
+                                                            actual_width=2.4)
+    else:
+        speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps)
+```
+## 车牌识别
+通过**Yolov8**定位车牌目标位置 **LPRNET**对车牌字符进行识别
+
+在违规车辆增加其图片crop type:image 
+
+
+## 想实现的
+将距离的远近做成**热力图**形式，车辆周边一个距离没有其他车辆标绿 有车辆标黄 重叠标红
+
+功能上：
+
+压实线检测
+
+闯红灯检测
