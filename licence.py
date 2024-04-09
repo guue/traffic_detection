@@ -12,7 +12,7 @@ import torch
 
 import numpy as np
 import cv2
-from ultralytics.test import predict, random_color
+from ultralytics.test import predict
 
 import re
 

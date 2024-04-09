@@ -1,5 +1,5 @@
 .vscode/
-*.jpg
+
 *.txt
 
 *.json
@@ -15,3 +15,4 @@ video-02.mp4
 YOLOv9/runs/detect/exp2/video_20s.mp4
 YOLOv9/runs/train/visDrone/weights/best.pt
 YOLOv9/runs/train/visDrone/weights/last.pt
+/__pycache__

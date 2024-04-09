@@ -43,7 +43,6 @@ from strong_sort.utils.parser import get_config
 from strong_sort.strong_sort import StrongSORT
 
 from draw import *
-from zebra_detector.test import detect_zoo
 
 # 日志
 logger = logging.getLogger('detect')
@@ -184,16 +183,6 @@ class VideoTracker:
 
         self.potential_red_light_runners = {}  # {car_id: {"entered": False, "red_light": False, "positions": []}}
 
-
-
-        """
-        在一开始 illegal 默认为 ''  不是None
-        如果有违规需要提出预警信息 前端ui相应车辆信息行列标红
-        warning()
-            ui 车辆信息标红
-            并对车辆信息（车牌号 违法信息）保存
-        最后将所有信息存储在car_status里，前端需要读取里面的信息，并根据相应的位置进行显示 每一帧图片之后这个信息都会更新 
-        """
         self.car_licence = {}  # {id:{license:licence,conf:conf},....}
 
         self.car_status = []  # 存放每辆车的状态 ["id: license: speed: illegal: ","id: license: speed: illegal: ",..]
@@ -237,13 +226,11 @@ class VideoTracker:
                                                         "red_light_detected": False, "positions": [],"initial_img":None}
 
         car_info = self.potential_red_light_runners[car_id]
-
         # 检查车辆左上角是否进入斑马线区域
         if x1 >= zebra_x1 and y1 >= zebra_y1 and not car_info["entered"]:
             car_info["start_record"] = True
             if self.traffic_light_color in  ["red1","red2"]:
                 car_info["red_light_detected"] = True
-
         # 记录车辆位置
         if car_info["start_record"]:
             car_info["positions"].append((x1, y1, x2, y2))
@@ -251,7 +238,6 @@ class VideoTracker:
         # 检查车辆是否完全进入斑马线区域
         if x2 <= zebra_x2 and y2 <= zebra_y2 and car_info["start_record"]:
             car_info["entered"] = True
-
         if car_info["start_record"] and not car_info.get("initial_img_saved", False):
             car_info["initial_img"] = im0.copy()  # 保存当前帧作为初始截图
             car_info["initial_bbox"] = bbox  # 保存初始位置的边界框
@@ -263,7 +249,6 @@ class VideoTracker:
         一直记录到当其右下角进入斑马线区域 即车身全部进入斑马线
         如果记录中红绿灯一直为红 则视为闯红灯
         """
-
         chuanghongdeng=[]
         for car_id, info in list(self.potential_red_light_runners.items()):
             if info["entered"] and info["red_light_detected"]:
@@ -275,17 +260,16 @@ class VideoTracker:
                 final_bbox = info["positions"][-1]  # 最后记录的位置
 
                 # 保存截图
-                self.save_violation_snapshot(car_id, initial_img, initial_bbox, "initial")
-                self.save_violation_snapshot(car_id, final_img, final_bbox, "final")
+                self.save_violation_snapshot(car_id, initial_img, initial_bbox, "initial",'chuanghongdeng')
+                self.save_violation_snapshot(car_id, final_img, final_bbox, "final",'chuanghongdeng')
                 # 清除记录，避免重复处理
                 del self.potential_red_light_runners[car_id]
 
         return chuanghongdeng
 
-    def save_violation_snapshot(self, car_id, img, bbox, snapshot_type):
+    def save_violation_snapshot(self, car_id, img, bbox, snapshot_type,behavior):
         """
         保存具有边界框标注的违规车辆截图。
-
         Parameters:
         - car_id: 车辆ID。
         - img: 要保存的图像。
@@ -293,13 +277,23 @@ class VideoTracker:
         - snapshot_type: 截图类型（'initial'或'final'）。
         """
         x1, y1, x2, y2 = map(int, bbox)
-        save_path = os.path.join(str(self.save_dir), "chuanghongdeng", str(car_id), f"{snapshot_type}.jpg")
+        save_path = os.path.join(str(self.save_dir), behavior, str(car_id), f"{snapshot_type}.jpg")
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
         # 创建带有边界框的图像副本
         marked_img = img.copy()
         cv2.rectangle(marked_img, (x1, y1), (x2, y2), (0, 0, 255), 2)  # 红色边界框
-
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        if behavior=='SpeedOver':
+            text = f"Violation: {behavior} speed:{snapshot_type}km/h"
+        else:
+            text = f"Violation: {behavior}"
+        text_size = cv2.getTextSize(text, font, 0.5, 2)[0]
+        text_x = x1
+        text_y = y2 + 20  # 边界框下方留出一些空间
+        cv2.putText(marked_img, text, (text_x, text_y), font, 0.5, (255, 255, 255), 2, cv2.LINE_AA)  # 白色文本
+        cv2.rectangle(marked_img, (text_x, text_y - text_size[1] - 5), (text_x + text_size[0], text_y + 5), (0, 0, 255),
+                      -1)
+        cv2.putText(marked_img, text, (text_x, text_y), font, 0.5, (255, 255, 255), 2, cv2.LINE_AA)  # 重新绘制文本以确保其在背景上
         # 保存图像
         cv2.imwrite(save_path, marked_img)
 
@@ -362,8 +356,6 @@ class VideoTracker:
             return None, False
         # 获取车辆的位置和尺寸历史
         locations_sizes = self.car_locations_history[car_id]
-        # 选择一个预设的车辆尺寸（以米为单位）
-        # 计算总移动距离（像素）
         total_pixel_distance = 0.0
         for i in range(1, len(locations_sizes)):
             prev_location, prev_size = locations_sizes[i - 1][1], locations_sizes[i - 1][2]
@@ -379,17 +371,17 @@ class VideoTracker:
         pixel_width, pixel_height = current_size
         # 摄像头为倾斜角 取几何平均值做真实距离映射
         dpix = math.sqrt((actual_length / pixel_height) * (actual_width / pixel_width)) * 3.3
-        # 计算总移动距离（米）
+        # 总移动距离
         total_real_distance = total_pixel_distance * dpix
-        # 计算总时间（秒）
+        # 总时间
         total_time_seconds = (locations_sizes[-1][0] - locations_sizes[0][0]) / fps
-        # 计算平均速度（km/h）
+        # 平均速度
         average_speed_kmh = (total_real_distance / total_time_seconds) * 3.6
-        # 检查速度是否在合理范围内
+
         if average_speed_kmh > 80:
-            return None, False  # 如果超出合理速度上限，视为无效
+            return None, False
         # 检测是否超速
-        SpeedOver = average_speed_kmh > 50  # 假定超过50km/h为超速
+        SpeedOver = average_speed_kmh > 60  # 假定超过60km/h为超速
         return average_speed_kmh, SpeedOver
 
     def calculate_direction_for_car(self, car_id):
@@ -437,16 +429,7 @@ class VideoTracker:
                     self.car_license_history[id] = [label, self.car_license_history[id][0]]
             output_queue.put((id, detection_result))
 
-    def zebra_detection_thread(self, input_queue, output_queue):
-        while True:
-            item = input_queue.get()  # 从队列中获取图像
-            if item is None:  # None表示接收到线程结束信号
-                output_queue.put(None)  # 确保主线程也能接收到结束信号
-                break
-            # 进行斑马线检测
-            image = item
-            detection_result = detect_zoo(image)
-            output_queue.put(detection_result)  # 将检测结果放入输出队列
+
 
     def image_detect(self, image):
         # Inference
@@ -496,10 +479,10 @@ class VideoTracker:
                 car_status_dict['illegal'] = True
                 car_status_dict['illegal_behavior'] = prev_illegal_behavior
             elif prev_illegal and new_illegal:
-                if prev_illegal_behavior != new_illegal_behavior:
-                    car_status_dict['illegal_behavior'] = prev_illegal_behavior + new_illegal_behavior
-                else:
-                    car_status_dict['illegal_behavior'] = prev_illegal_behavior
+                # 将新的违规行为记录进表中
+                unique_new_illegal_behaviors = [behavior for behavior in new_illegal_behavior if
+                                                behavior not in prev_illegal_behavior]
+                car_status_dict['illegal_behavior'] = prev_illegal_behavior + unique_new_illegal_behaviors
 
         # 更新车辆的历史记录为最新的状态
         self.car_history[car_id] = car_status_dict
@@ -532,12 +515,10 @@ class VideoTracker:
             car = parse_str2dir(status_str)  # 将字符串转换为字典
 
             if car['illegal']:  # 检查是否违规
-                # 初始化一个变量，用于记录是否已经更新了违规信息
                 updated = False
 
                 for i, existing_str in enumerate(self.illegal_car_status):
                     existing = parse_str2dir(existing_str)  # 将字符串转换为字典
-
                     if existing['id'] == car['id'] or (existing['licence'] == car['licence'] and car[
                         'licence'] != ''):  # 查找是否已存在于illegal_car_status中
                         # 如果已存在，则更新违规信息
@@ -546,7 +527,6 @@ class VideoTracker:
                         self.illegal_car_status[i] = updated_str  # 更新列表中的字符串
                         updated = True
                         break
-
                 if not updated:
                     # 如果不存在，则添加新的违规车辆信息
                     illegal_behaviors_str = ", ".join(car['illegal_behavior'])
@@ -792,30 +772,33 @@ class VideoTracker:
                                         car_status_dict['illegal'] = True
                                         car_status_dict['illegal_behavior'].append('超速')
                                         if id is not None:
-                                            crop = save_one_box(torch.Tensor(bboxes), imc, BGR=True, save=False)
-                                            path = Path(self.save_dir / 'speedover' / str(int(id)) / f'{speed}.jpg')
-                                            path.parent.mkdir(parents=True, exist_ok=True)  # make directory
-                                            Image.fromarray(crop[..., ::-1]).save(str(path), quality=95,
-                                                                                  subsampling=0)  # save RGB
+                                            # crop = save_one_box(torch.Tensor(bboxes), imc, BGR=True, save=False)
+                                            # path = Path(self.save_dir / 'speedover' / str(int(id)) / f'{speed}.jpg')
+                                            # path.parent.mkdir(parents=True, exist_ok=True)  # make directory
+                                            # Image.fromarray(crop[..., ::-1]).save(str(path), quality=95,
+                                            #                                       subsampling=0)  # save RGB
+                                            self.save_violation_snapshot(int(id),self.im0_c,bboxes,f"{speed}",'SpeedOver')
 
                                     if id in self.car_licence:
                                         car_status_dict['licence'] = self.car_licence[id]['licence']
 
                                     # 图像检测信息框绘制
-                                    if self.save_vid or self.show_vid:  # Add bbox to image
-                                        c = int(cls)  # integer class
-                                        id = int(id)  # integer id
-                                        if self.names[c] in ['car', 'bus', 'truck']:
-                                            label = None if self.hide_labels else (
-                                                f' {self.names[c]}')
-                                            label += f" {bbox_speed}  "
-                                            if id in self.car_licence:
-                                                label += f"{self.car_licence[id]['licence']}"
-                                        else:
-                                            label = None if self.hide_labels else (
-                                                f' {self.names[c]}')
 
-                                        annotator.box_label(bboxes, label, color=colors(c, True))
+                                    if self.save_vid or self.show_vid:  # Add bbox to image
+                                        if self.names[int(cls)] != 'traffic light':
+                                            c = int(cls)  # integer class
+                                            id = int(id)  # integer id
+                                            if self.names[c] in ['car', 'bus', 'truck']:
+                                                label = None if self.hide_labels else (
+                                                    f' {self.names[c]}')
+                                                label += f" {bbox_speed}  "
+                                                if id in self.car_licence:
+                                                    label += f"{self.car_licence[id]['licence']}"
+                                            else:
+                                                label = None if self.hide_labels else (
+                                                    f' {self.names[c]}')
+
+                                            annotator.box_label(bboxes, label, color=colors(c, True))
 
                                     # 将车辆状态信息放到一个汇总列表里 以字符串形式
                                     chuanghongdeng_car=self.check_red_light_violations()
@@ -982,10 +965,11 @@ def main(opt):
             class_counts = video_tracker.get_class_counts()
             vehicle_count = video_tracker.get_vehicle_count()
             illegal_car = video_tracker.get_illegal_car()
-            print(illegal_car)
+            if illegal_car:
+                print(illegal_car)
 
-            # if car_status:
-            #     print(f"Current car status: {video_tracker.car_status}")
+            if car_status:
+                print(f"Current car status: {video_tracker.car_status}")
             time.sleep(1)
 
             # logger.info(f"Current class counts: {class_counts}")
