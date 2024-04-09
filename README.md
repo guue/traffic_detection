@@ -181,6 +181,19 @@ update:
     video_tracker.change_video("D:/traffic_detection/video_20s.mp4")
     video_tracker.start_detection()  # 开始检测
 ```
+在违规车辆增加其图片crop type:image 
+```python
+    if SpeedOverFlag and self.names[int(cls)] in ['car', 'bus', 'truck']:
+        car_status_dict['illegal'] = True
+        car_status_dict['illegal_behavior'].append('超速')
+        if id is not None:
+            crop = save_one_box(torch.Tensor(bboxes), imc, BGR=True, save=False)
+            path = Path(self.save_dir / 'speedover' / str(int(id)) / f'{speed}.jpg')
+            path.parent.mkdir(parents=True, exist_ok=True)  # make directory
+            Image.fromarray(crop[..., ::-1]).save(str(path), quality=95,
+                                                  subsampling=0)  # save RGB
+```
+
 修改测速、方向、更新信息等多个函数
 ## 测速实现
 首先使用提前设定好的车辆真实值与检测值的比例求几何平均 防止宽度和长度单一值受摄像头距离影响，同时对不同车型的真实长宽值设定不同的值
@@ -234,19 +247,35 @@ update:
 ## 车牌识别
 通过**Yolov8**定位车牌目标位置 **LPRNET**对车牌字符进行识别
 
-在违规车辆增加其图片crop type:image 
+红绿灯检测：只检测一次 获得坐标后 持续对图像进行颜色检测
 ```python
-    if SpeedOverFlag and self.names[int(cls)] in ['car', 'bus', 'truck']:
-        car_status_dict['illegal'] = True
-        car_status_dict['illegal_behavior'].append('超速')
-        if id is not None:
-            crop = save_one_box(torch.Tensor(bboxes), imc, BGR=True, save=False)
-            path = Path(self.save_dir / 'speedover' / str(int(id)) / f'{speed}.jpg')
-            path.parent.mkdir(parents=True, exist_ok=True)  # make directory
-            Image.fromarray(crop[..., ::-1]).save(str(path), quality=95,
-                                                  subsampling=0)  # save RGB
-```
+            if self.names[int(cls)] == 'traffic light':  # 假设交通灯的类别标签是'traffic light'
+                # 获取交通灯图像区域
+                tl_x1, tl_y1, tl_x2, tl_y2 = map(int, [781, 35, 807, 106])
+                tl_img = im0s[tl_y1:tl_y2, tl_x1:tl_x2]
 
+                # 检测交通灯颜色
+                if tl_img.size > 0:  # 确保图像区域有效
+                    traffic_light_color = self.TLL_DET(tl_img)
+                    print(f"Detected traffic light color: {traffic_light_color}")
+                    # 这里你可以根据颜色做进一步的处理
+                else:
+                    logger.info("Invalid traffic light image region.")
+```
+斑马线检测：只检测一次 获得坐标后 对图像绘制坐标
+```python
+                # 斑马线检测
+                if not self.zebra_detected:
+                    ret, zoo_location = ZebraDetection(im0)
+                    if ret:
+                        self.zebra_detected = True
+                        box = [zoo_location[0][0], zoo_location[0][1], zoo_location[1][0], zoo_location[1][1]]
+                        annotator.box_label(box, 'zoo_crossing', (0, 255, 0))
+                    else:
+                        self.zebra_detected = True
+                        box = [399,494,1456,640]
+                        annotator.box_label(box,'zoo_crossing',(0,255,0))
+```
 ## 想实现的
 将距离的远近做成**热力图**形式，车辆周边一个距离没有其他车辆标绿 有车辆标黄 重叠标红
 

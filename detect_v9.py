@@ -6,6 +6,8 @@ import queue
 import os
 import time
 
+from color_det import get_color
+from zebra_det import ZebraDetection
 from licence import Licence
 from datetime import datetime, timedelta
 import sys
@@ -114,16 +116,18 @@ def clear_directory(dir_path):
 
 class VideoTracker:
     def __init__(self, opt):
+        self.traffic_light_color = 'green'
+        self.zoo_box = []
+        self.zebra_detected = False
         self.detection_thread = None
 
         self.is_running = False
         self.lock = threading.Lock()
 
-        self.zebra_input_queue = queue.Queue()
-        self.zebra_output_queue = queue.Queue()
+
         self.image_display_queue = queue.Queue(maxsize=10)  # 前端可直接读此队列进行显示
         self.license_output_queue = queue.Queue()
-        self.license_input_queue = queue.Queue(7)
+        self.license_input_queue = queue.Queue(10)
         self.car_license_history = {}  # {id: [last_license, second_last_license]
 
         self.im0_s = None
@@ -173,10 +177,14 @@ class VideoTracker:
 
         # 存放预测结果   第一维是id索引
         self.outputs = [None] * self.batchsize
-        self.outputs_prev = []
+
 
         self.car_locations_history = {}  # {id: [(frame_idx, (x1, y1)), ...], ...}
         self.car_history = {}  # 新增一个字典来保存每辆车的历史状态信息
+
+        self.potential_red_light_runners = {}  # {car_id: {"entered": False, "red_light": False, "positions": []}}
+
+
 
         """
         在一开始 illegal 默认为 ''  不是None
@@ -208,6 +216,92 @@ class VideoTracker:
         self.counted_ids = set()  # 初始化一个集合，用于存储已经计数过的ID
         self.vehicle_counts_over_time = {}  # 时间戳: 车辆总数
         self.fps = 0
+
+    def update_red_light_runners(self, car_id, bbox,im0):
+        """
+        根据车辆位置和红绿灯状态更新可能闯红灯的车辆信息。
+
+        Parameters:
+        - car_id: 车辆ID。
+        - bbox: 车辆的边界框 [x1, y1, x2, y2]。
+        - traffic_light_color: 红绿灯颜色。
+        - zebra_box: 斑马线区域 [x1, y1, x2, y2]。
+        - im0:一张干净的图片
+        """
+        x1, y1, x2, y2 = bbox
+        zebra_x1, zebra_y1, zebra_x2, zebra_y2 = self.zoo_box
+
+        # 初始化车辆信息
+        if car_id not in self.potential_red_light_runners:
+            self.potential_red_light_runners[car_id] = {"start_record": False, "entered": False,
+                                                        "red_light_detected": False, "positions": [],"initial_img":None}
+
+        car_info = self.potential_red_light_runners[car_id]
+
+        # 检查车辆左上角是否进入斑马线区域
+        if x1 >= zebra_x1 and y1 >= zebra_y1 and not car_info["entered"]:
+            car_info["start_record"] = True
+            if self.traffic_light_color in  ["red1","red2"]:
+                car_info["red_light_detected"] = True
+
+        # 记录车辆位置
+        if car_info["start_record"]:
+            car_info["positions"].append((x1, y1, x2, y2))
+
+        # 检查车辆是否完全进入斑马线区域
+        if x2 <= zebra_x2 and y2 <= zebra_y2 and car_info["start_record"]:
+            car_info["entered"] = True
+
+        if car_info["start_record"] and not car_info.get("initial_img_saved", False):
+            car_info["initial_img"] = im0.copy()  # 保存当前帧作为初始截图
+            car_info["initial_bbox"] = bbox  # 保存初始位置的边界框
+            car_info["initial_img_saved"] = True
+
+    def check_red_light_violations(self):
+        """
+        当检测到车辆左上角进入斑马线区域时为红灯 开始记录其信息
+        一直记录到当其右下角进入斑马线区域 即车身全部进入斑马线
+        如果记录中红绿灯一直为红 则视为闯红灯
+        """
+
+        chuanghongdeng=[]
+        for car_id, info in list(self.potential_red_light_runners.items()):
+            if info["entered"] and info["red_light_detected"]:
+                chuanghongdeng.append(car_id)
+                # 获取初始和最终截图以及对应的边界框
+                initial_img = info["initial_img"]
+                initial_bbox = info["initial_bbox"]
+                final_img = self.im0_c.copy()
+                final_bbox = info["positions"][-1]  # 最后记录的位置
+
+                # 保存截图
+                self.save_violation_snapshot(car_id, initial_img, initial_bbox, "initial")
+                self.save_violation_snapshot(car_id, final_img, final_bbox, "final")
+                # 清除记录，避免重复处理
+                del self.potential_red_light_runners[car_id]
+
+        return chuanghongdeng
+
+    def save_violation_snapshot(self, car_id, img, bbox, snapshot_type):
+        """
+        保存具有边界框标注的违规车辆截图。
+
+        Parameters:
+        - car_id: 车辆ID。
+        - img: 要保存的图像。
+        - bbox: 车辆的边界框 [x1, y1, x2, y2]。
+        - snapshot_type: 截图类型（'initial'或'final'）。
+        """
+        x1, y1, x2, y2 = map(int, bbox)
+        save_path = os.path.join(str(self.save_dir), "chuanghongdeng", str(car_id), f"{snapshot_type}.jpg")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        # 创建带有边界框的图像副本
+        marked_img = img.copy()
+        cv2.rectangle(marked_img, (x1, y1), (x2, y2), (0, 0, 255), 2)  # 红色边界框
+
+        # 保存图像
+        cv2.imwrite(save_path, marked_img)
 
     def change_video(self, vid_path):
         self.source = vid_path
@@ -291,6 +385,9 @@ class VideoTracker:
         total_time_seconds = (locations_sizes[-1][0] - locations_sizes[0][0]) / fps
         # 计算平均速度（km/h）
         average_speed_kmh = (total_real_distance / total_time_seconds) * 3.6
+        # 检查速度是否在合理范围内
+        if average_speed_kmh > 80:
+            return None, False  # 如果超出合理速度上限，视为无效
         # 检测是否超速
         SpeedOver = average_speed_kmh > 50  # 假定超过50km/h为超速
         return average_speed_kmh, SpeedOver
@@ -331,6 +428,7 @@ class VideoTracker:
                 label, conf = detection_result
             except Exception as e:
                 logger.error(e)
+                label = ''
             # 更新车牌检测历史
             if label != '':
                 if id not in self.car_license_history:
@@ -370,6 +468,11 @@ class VideoTracker:
         # 保存图表到指定路径
         plt.savefig(save_path, bbox_inches='tight')
         plt.close()  # 关闭图表窗口，释放资源
+
+    def TLL_DET(self,image):
+        traffic_light_color = get_color(image)
+        return traffic_light_color
+
 
     def update_or_add(self, car_status_dict):
         """
@@ -514,10 +617,8 @@ class VideoTracker:
             self.license_thread = threading.Thread(
                 target=self.license_plate_detection,
                 args=(self.license_input_queue, self.license_output_queue))
-            # zebra_thread = threading.Thread(target=self.zebra_detection_thread,
-            #                                 args=(self.zebra_input_queue, self.zebra_output_queue))
+
             self.license_thread.start()
-            # zebra_thread.start()
 
             self.gpu_memory = {}
             self.yolo_model.warmup(imgsz=(1 if self.pt or self.yolo_model.triton else self.bs, 3, *self.imgsz))
@@ -533,24 +634,6 @@ class VideoTracker:
                 self.fps = vid_cap.get(cv2.CAP_PROP_FPS)
                 current_time = datetime.now()  # 当前帧开始检测的时间
                 time_elapsed = current_time - last_record_time
-
-                # 斑马线检测
-                # self.zebra_input_queue.put(im)
-                # if not self.zebra_output_queue.empty():
-                #     zebra_detection_result = self.zebra_output_queue.get()
-                #     # 处理斑马线检测结果
-                #     zoo_locations, scale_h, scale_w = zebra_detection_result
-                #     print(f'zoo:{zoo_locations}')
-                #     for box in zoo_locations[0]:
-                #         box = box.tolist()
-                #         x1, y1 = int(box[0] * scale_w), int(box[1] * scale_h)
-                #         x2, y2 = int(box[2] * scale_w), int(box[3] * scale_h)  # 解析返回的位置信息
-                #         conf_zoo = box[4]
-                #         boxes = [x1, y1, x2, y2]
-                #         # 设置斑马线的类别标签为 100
-                #         zebra_label = 100
-                #         label_text = f'Zebra Crossing: {zebra_label} {conf_zoo}'
-                #         # annotator.box_label(boxes,label_text,color=(0,255,0))   #斑马线绘制
 
                 if time_elapsed >= record_interval:
                     self.vehicle_counts_over_time[current_time.strftime('%H:%M:%S')] = self.vehicle_count
@@ -573,12 +656,29 @@ class VideoTracker:
                             p, im0, frame = path[i], im0s[i].copy(), self.dataset.count
                         else:
                             p, im0, frame = path, im0s.copy(), getattr(self.dataset, 'frame', 0)
+
+                        self.im0_c=im0.copy() # 干净的图
+
                         p = Path(p)  # to Path
                         self.save_dir.mkdir(parents=True, exist_ok=True)
                         curr_frames[i] = im0
                         imc = im0.copy()
                         annotator = Annotator(im0, line_width=1, example=str(self.names), pil=True, font='simkai.ttf',
                                               font_size=20)
+
+                        # 斑马线检测
+                        # if not self.zebra_detected:
+                        ret, zoo_location = ZebraDetection(im0)
+                        if ret:
+                            self.zebra_detected = True
+                            self.zoo_box = [zoo_location[0][0], zoo_location[0][1], zoo_location[1][0], zoo_location[1][1]]
+                            annotator.box_label(self.zoo_box, 'zoo_crossing', (0, 255, 0))
+                        else:
+                            self.zebra_detected = True
+                            self.zoo_box = [399,494,1456,640]
+                            annotator.box_label(self.zoo_box,'zoo_crossing',(0,255,0))
+
+
                         if self.strongsort_cfg.STRONGSORT.ECC:  # camera motion compensation
                             self.strongsort_list[i].tracker.camera_update(prev_frames[i], curr_frames[i])
                         if det is not None and len(det):
@@ -601,12 +701,20 @@ class VideoTracker:
                             """
                             outputs 包含这张图片中所有目标的信息  i是视频源索引    
                             """
+                            # 红绿灯检测
+                            # if self.names[int(cls)] == 'traffic light':  # 假设交通灯的类别标签是'traffic light'
+                            # 获取交通灯图像区域
+                            tl_x1, tl_y1, tl_x2, tl_y2 = map(int, [781, 35, 807, 106])
+                            tl_img = im0s[tl_y1:tl_y2, tl_x1:tl_x2]
 
-                            # 保存相近两帧信息
-                            if len(self.outputs_prev) < 2:
-                                self.outputs_prev.append(self.outputs[i])
+                            # 检测交通灯颜色
+                            if tl_img.size > 0:  # 确保图像区域有效
+                                self.traffic_light_color = self.TLL_DET(tl_img)
+
                             else:
-                                self.outputs_prev[:] = [self.outputs_prev[-1], self.outputs[i]]
+                                logger.info("Invalid traffic light image region.")
+
+
 
                             if len(self.outputs[i]) > 0:
                                 # 单一检测目标处理
@@ -618,6 +726,10 @@ class VideoTracker:
                                     cls = output[5]
                                     car_status_dict = {"id": int(id), "licence": '', "speed": '',
                                                        "illegal": False, "illegal_behavior": []}
+
+
+                                    self.update_red_light_runners(int(id), bboxes,imc)
+
 
                                     if self.names[int(cls)] in ['car', 'bus', 'truck']:
                                         car_center = self.get_centers(bboxes)
@@ -631,7 +743,7 @@ class VideoTracker:
 
                                         x1, y1, x2, y2 = int(bboxes[0]), int(bboxes[1]), int(bboxes[2]), int(bboxes[3])
                                         x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])  # 确保坐标是整数
-                                        if x2 > x1 and y2 > y1:  # 确保裁剪区域有效
+                                        if x2 > x1 and y2 > y1 and y2 > 430:  # 确保裁剪区域有效 430 车牌检测区
                                             cropped_image = im0s[y1:y2, x1:x2]
                                             if cropped_image.size > 0:  # 检查图像尺寸
                                                 self.license_input_queue.put((id, cropped_image))  # 将车牌图像放入车牌识别队列
@@ -706,8 +818,15 @@ class VideoTracker:
                                         annotator.box_label(bboxes, label, color=colors(c, True))
 
                                     # 将车辆状态信息放到一个汇总列表里 以字符串形式
+                                    chuanghongdeng_car=self.check_red_light_violations()
+                                    if len(chuanghongdeng_car):
+                                        for index in chuanghongdeng_car:
+                                            if index == int(id):
+                                                car_status_dict['illegal'] = True
+                                                car_status_dict['illegal_behavior'].append('闯红灯')
                                     self.update_or_add(car_status_dict)
                                     self.update_illegal_car_status()
+
 
                         else:
                             self.strongsort_list[i].increment_ages()
@@ -787,7 +906,7 @@ class VideoTracker:
         if self.vid_writer:
             self.vid_writer.release()
         self.license_input_queue.put(None)  # 发送停止信号
-        self.zebra_input_queue.put(None)
+
         self.license_thread.join()
         cv2.destroyAllWindows()
 
@@ -854,7 +973,7 @@ def main(opt):
     logger.info(f"Initializing VideoTracker with options: {opt}")
     video_tracker = VideoTracker(opt)
     logger.info('Init successfully')
-    # video_tracker.change_video("D:/traffic_detection/video_20s.mp4")
+    # video_tracker.change_video("chuanghongdeng.mp4")
     video_tracker.start_detection()  # 开始检测
     try:
         while video_tracker.is_running:
@@ -863,8 +982,7 @@ def main(opt):
             class_counts = video_tracker.get_class_counts()
             vehicle_count = video_tracker.get_vehicle_count()
             illegal_car = video_tracker.get_illegal_car()
-            # print(illegal_car)
-
+            print(illegal_car)
 
             # if car_status:
             #     print(f"Current car status: {video_tracker.car_status}")
