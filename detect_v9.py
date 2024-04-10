@@ -821,26 +821,26 @@ class VideoTracker:
 
                         # 创建一个可写的副本 显示车辆信息和统计信息 但最终不需要这部分
                         im0_writable = im0.copy()
-                        draw_class_counts(im0_writable, self.class_counts)
-                        if len(self.car_status) > 0:
-                            # print(self.car_status)
-
-                            """
-                            向前端传递 汽车信息表  type:列表
-                            """
-
-                            ''''''''''''''''''''''''''''''''
-                            height, width = im0.shape[:2]  # 获取图像的高度和宽度
-                            # 设定一个从右边界向左的偏移量
-                            right_margin = 10
-                            # 计算绘制文本的起始位置
-                            # 假设每行文本的大概宽度是400像素，这个值可以根据实际情况调整
-                            text_width = 800
-                            start_x = width - text_width - right_margin
-                            start_y = 20  # 从图像顶部向下的偏移量
-                            # 绘制车辆状态信息
-                            draw_texts(im0_writable, self.car_status, start_pos=(start_x, start_y),
-                                       color=(0, 255, 0))
+                        # draw_class_counts(im0_writable, self.class_counts)
+                        # if len(self.car_status) > 0:
+                        #     # print(self.car_status)
+                        #
+                        #     """
+                        #     向前端传递 汽车信息表  type:列表
+                        #     """
+                        #
+                        #     ''''''''''''''''''''''''''''''''
+                        #     height, width = im0.shape[:2]  # 获取图像的高度和宽度
+                        #     # 设定一个从右边界向左的偏移量
+                        #     right_margin = 10
+                        #     # 计算绘制文本的起始位置
+                        #     # 假设每行文本的大概宽度是400像素，这个值可以根据实际情况调整
+                        #     text_width = 800
+                        #     start_x = width - text_width - right_margin
+                        #     start_y = 20  # 从图像顶部向下的偏移量
+                        #     # 绘制车辆状态信息
+                        #     draw_texts(im0_writable, self.car_status, start_pos=(start_x, start_y),
+                        #                color=(0, 255, 0))
                         # 最终显示的图片
                         self.im0_s = im0_writable.copy()
                         # 显存占用统计
@@ -956,7 +956,7 @@ def main(opt):
     logger.info(f"Initializing VideoTracker with options: {opt}")
     video_tracker = VideoTracker(opt)
     logger.info('Init successfully')
-    # video_tracker.change_video("chuanghongdeng.mp4")
+    video_tracker.change_video("chuanghongdeng.mp4")
     video_tracker.start_detection()  # 开始检测
     try:
         while video_tracker.is_running:
