@@ -86,25 +86,34 @@ def recv_img(c_socket):
     
     return img_data
 
-def send_json_msg(message):
-        """
-        向客户端发送JSON格式的消息。
-        :param client_socket: 客户端socket对象
-        :param message: 要发送的消息（字典）
-        """
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((IP, port))
-        try:
-            # 将消息字典转换为JSON字符串
-            message_str = json.dumps(message)
-            # 发送JSON字符串
-            s.sendall(message_str.encode('utf-8'))
-        except socket.error as e:
-            traceback.print_exc()
-            # 处理发送数据时的错误
-            # print(f"Socket error: {e}")
-        finally:
-            s.close()
+
+import base64
+import json
+import socket
+import traceback
+
+
+def send_json_msg(message,client_socket):
+    """
+    向客户端发送JSON格式的消息。
+    :param message: 要发送的消息（字典）
+    """
+    try:
+        # 检查消息中是否包含bytes类型的数据，并将其转换为Base64字符串
+        def encode_bytes(obj):
+            if isinstance(obj, bytes):
+                return base64.b64encode(obj).decode('utf-8')  # 转换为Base64编码的字符串
+            raise TypeError("Object of type 'bytes' is not JSON serializable")
+
+        # 将消息字典转换为JSON字符串，对bytes类型的数据使用上面定义的转换函数
+        message_str = json.dumps(message, default=encode_bytes,ensure_ascii=False)
+        # 发送JSON字符串
+        client_socket.sendall(message_str.encode('utf-8'))
+
+    except socket.error as e:
+
+        traceback.print_exc()
+
 
 def recv_json_msg(self, client_socket):
     """
