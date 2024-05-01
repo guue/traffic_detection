@@ -107,50 +107,7 @@ def comp_distance(*, RT, K, p1, p2, h=4000):
     return AB
 
 
-def Kmtrix(*, f=100, u0=100, v0=100):
-    dx = 1 / 130
-    dy = 1 / 130
-    return np.array([[f / dx, 0, u0], [0, f / dy, v0], [0, 0, 1]])  # 创建矩阵
 
-
-# 获取f与距离关系,寻找最优解
-def distance_list():
-    h = 4000  # 单位mm
-    u0 = 540
-    v0 = 960
-
-    p0x = 513
-    p0y = 229
-
-    p1 = np.array([464, 465, 1])
-    p2 = np.array([470, 443, 1])
-    a_list = []
-    b_list = []
-    f_list = []
-    dis_list = []
-    k = []
-    RT = []
-    for f in range(1, 500):
-        f = f / 10
-        # 计算内参矩阵
-        K = Kmtrix(f=f, u0=u0, v0=v0)
-        # 计算旋转矩阵
-        a, b, Rmatrix = rotate_Matrix(p0x=p0x, p0y=p0y, K=K)
-        # 计算外参矩阵
-        RTmatrix = RT_Matrix(R=Rmatrix, h=h)
-        # 计算p1真实世界坐标
-        rp1 = comp_real_position(Mrt=RTmatrix, K=K, h=h, pos=p1)
-        # 计算p2真实世界坐标
-        rp2 = comp_real_position(Mrt=RTmatrix, K=K, h=h, pos=p2)
-        # 计算两点距离
-        AB = np.linalg.norm(rp2 - rp1) / 1000
-        a_list.append(a)
-        b_list.append(b)
-        f_list.append(f)
-        dis_list.append(AB)
-        k.append(K)
-        RT.append(RTmatrix)
-    return a_list, b_list, f_list, dis_list, k, RT
 
 
 def evaluate_accuracy(point_pairs, real_distances,K,RT):
@@ -197,41 +154,11 @@ def evaluate_accuracy(point_pairs, real_distances,K,RT):
 
 
 
-real_dis = 6
-condition1 = lambda value: abs(value - real_dis)
 
-'''
-(483, 347)
-(510, 346)
-'''
+
+
 if __name__ == '__main__':
-    # a_list, b_list, f_list, dis_list,k,RT = distance_list()
-    #
-    # index = 0
-    # x = 100
-    # for i in range(0, len(dis_list) - 1):
-    #     if (abs(dis_list[i] - real_dis) < x):
-    #         x = abs(dis_list[i] - real_dis)
-    #         index = i
-    # print(dis_list[0])
-    # print('最优焦距', f_list[index])
-    # print('距离', dis_list[index])
-    # print('index', index)
-    # print(k[index])
-    # print(RT[index])
-    #
-    # x = np.array(f_list)
-    # y1 = np.array(dis_list)
-    #
-    # fig = plt.figure(figsize=(5, 4), dpi=100)
-    # plt.title('焦距与距离关系对应_摄像头焦距最优解', fontname="SimHei")
-    # plt.xlabel('focus distance')
-    # plt.ylabel('Two Point distance')
-    # plt.plot(x, y1)
-    # plt.plot(f_list[index], dis_list[index], "kx")
-    # plt.text(f_list[index] + 10, dis_list[index], '最优焦距 :' + str(f_list[index]) + 'mm', fontsize=15,
-    #          fontname="SimHei")
-    # plt.show()
+
 
     K, RT = camera_parameters(excel_path)
     print(K)
@@ -239,26 +166,3 @@ if __name__ == '__main__':
     point_pairs = [((419, 687), (435, 613)),((630, 689),(576, 469)),((306, 621),(335, 621)), ((474, 578),(548, 578)),((447, 541), (463, 466)),((624, 501),(633, 501)),((557, 379),(560, 392))]
     real_distances = [6.0, 30,0.44,1.8,15.0,0.3,6]
     evaluate_accuracy(point_pairs, real_distances,K=K,RT=RT)
-    # h=4000 #单位mm
-    # p1 = np.array([447, 543, 1])
-    # p2 = np.array([454, 503, 1])
-    # # AB=comp_distance(K=K,RT=RT,p1=p1, p2=p2,h=h)
-    # # print(AB)
-    #
-    #
-    # p0x = 502
-    # p0y = 213
-    #
-    # # p1 = np.array([414, 484, 1])
-    # # p2 = np.array([403, 484, 1])
-    #
-    #
-    # # 计算p1真实世界坐标
-    # rp1 = comp_real_position(Mrt=RT, K=K, h=h, pos=p1)
-    # # 计算p2真实世界坐标
-    # rp2 = comp_real_position(Mrt=RT, K=K, h=h, pos=p2)
-    # # 计算两点距离
-    # AB = np.linalg.norm(rp2 - rp1) / 1000
-    # print(rp1)
-    # print(rp2)
-    # print(AB)
