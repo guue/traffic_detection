@@ -45,7 +45,7 @@ from YOLOv9.utils.plots import Annotator, colors, save_one_box
 from strong_sort.utils.parser import get_config
 from strong_sort.strong_sort import StrongSORT
 
-from draw import *
+# from draw import *
 
 # 日志
 logger = logging.getLogger('detect')
@@ -367,40 +367,6 @@ class VideoTracker:
         if len(self.car_locations_history[car_id]) > 20:
             self.car_locations_history[car_id].pop(0)
 
-    def calculate_speed(self, car_id, fps, actual_length=4.5, actual_width=1.8):
-        # 确保车辆位置历史中有足够的数据
-        if car_id not in self.car_locations_history or len(self.car_locations_history[car_id]) < 2:
-            return None, False
-        # 获取车辆的位置和尺寸历史
-        locations_sizes = self.car_locations_history[car_id]
-        total_pixel_distance = 0.0
-        for i in range(1, len(locations_sizes)):
-            prev_location, prev_size = locations_sizes[i - 1][1], locations_sizes[i - 1][2]
-            current_location, current_size = locations_sizes[i][1], locations_sizes[i][2]
-            """
-            current_location 为中心点坐标
-            """
-            pixel_distance = math.sqrt(
-                (current_location[0] - prev_location[0]) ** 2 + (current_location[1] - prev_location[1]) ** 2)
-            total_pixel_distance += pixel_distance
-        # 获取最新的车辆尺寸（像素）
-        _, _, current_size = locations_sizes[-1]
-        pixel_width, pixel_height = current_size
-        # 摄像头为倾斜角 取几何平均值做真实距离映射
-        dpix = math.sqrt((actual_length / pixel_height) * (actual_width / pixel_width))
-        # 总移动距离
-        total_real_distance = total_pixel_distance * dpix
-        # 总时间
-        total_time_seconds = (locations_sizes[-1][0] - locations_sizes[0][0]) / fps
-
-        # 平均速度
-        average_speed_kmh = (total_real_distance / total_time_seconds) * 3.6
-
-        # if average_speed_kmh > 90:
-        #     return None, False
-        # 检测是否超速
-        SpeedOver = average_speed_kmh > 60  # 假定超过60km/h为超速
-        return average_speed_kmh, SpeedOver
 
     def calculate_direction_for_car(self, car_id):
         if car_id not in self.car_locations_history or len(self.car_locations_history[car_id]) < 2:
@@ -830,17 +796,9 @@ class VideoTracker:
                                                 if index == int(id):
                                                     car_status_dict['illegal'] = True
                                                     car_status_dict['illegal_behavior'].append('闯红灯')
-                                        # if car_status_dict != {}:
-                                        #     send_json_msg({
-                                        #         "action": "new_vehicle_update",
-                                        #         "data": {'id': car_status_dict['id'], "licence": car_status_dict["licence"],
-                                        #                  "illegal": car_status_dict["illegal"],
-                                        #                  "illegal_behavior": car_status_dict["illegal_behavior"]}
-                                        #     }, self.client_socket)
-                                        # print(car_status_dict)
                                         self.update_or_add(car_status_dict)
                                         self.update_illegal_car_status()
-                                        # self.post_car_status()
+
 
 
 
@@ -854,11 +812,6 @@ class VideoTracker:
 
                         # 创建一个可写的副本 显示车辆信息和统计信息 但最终不需要这部分
                         im0_writable = im0.copy()
-                        # draw_class_counts(im0_writable, self.class_counts)
-                        # if len(self.car_status) > 0:
-
-                        #     # print(self.car_status)
-
                         # 最终显示的图片
                         self.im0_s = im0_writable.copy()
                         # 显存占用统计
@@ -874,17 +827,6 @@ class VideoTracker:
                 # 显示
                 if self.im0_s is None:
                     self.im0_s = im0s.copy()
-                # cv2.imwrite('a.jpg',self.im0_s)
-                # buffer = cv2.imencode('.jpg', self.im0_s)[1]
-                # try:
-                #     send_json_msg({
-                #         "action": "update_frame",
-                #         "data": {"image_data": base64.b64encode(buffer)}
-                #     },self.client_socket)
-                # except Exception as e:
-                #     print(f"image display:{e}")
-                #     traceback.print_exc()
-                # cv2.namedWindow('Detection', cv2.WINDOW_FREERATIO)  # 窗口大小自适应比例
                 cv2.imshow('Detection', self.im0_s)
                 cv2.imwrite('s.jpg',self.im0_c)
                 cv2.setMouseCallback('Detection', click_event, self.im0_s)  # 设置鼠标回调
@@ -995,7 +937,7 @@ def main(opt):
     logger.info('Init successfully')
     # video_tracker.change_video("chuanghongdeng.mp4")
     video_tracker.start_detection()  # 开始检测
-    # video_tracker.post_car_status_test()
+
     try:
         while video_tracker.is_running:
             # 每隔一定时间获取并打印实时数据
@@ -1003,17 +945,8 @@ def main(opt):
             class_counts = video_tracker.get_class_counts()
             vehicle_count = video_tracker.get_vehicle_count()
             illegal_car = video_tracker.get_illegal_car()
-            # if illegal_car:
-            #     print(illegal_car)
-            #
-            # if car_status:
-            #     print(f"Current car status: {video_tracker.car_status}")
             time.sleep(1)
-
-            # logger.info(f"Current class counts: {class_counts}")
-            # logger.info(f"Current vehicle count: {vehicle_count}")
     except Exception as e:
-
         logger.error(e)
 
 
