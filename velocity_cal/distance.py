@@ -6,7 +6,6 @@ from matplotlib import pyplot as plt
 excel_path = r'velocity_cal/camera_parameters.xlsx'
 
 
-# 假设的内参矩阵
 
 
 # 计算旋转矩阵
@@ -129,7 +128,6 @@ def evaluate_accuracy(point_pairs, real_distances,K,RT):
         estimated_distances.append(estimated_dist)
         print(f"点对 {p1} 和 {p2} 的估计距离为 {estimated_dist:.3f} 米, 真实距离为 {real_dist} 米, 误差为 {error:.3f} 米")
 
-    # 绘制一张综合图
     plt.figure(figsize=(10, 5))
     indices = np.arange(len(point_pairs))
     plt.plot(indices, real_distances, 'o-', label='Real Distance', markersize=8, color='blue', linewidth=2)
@@ -140,7 +138,7 @@ def evaluate_accuracy(point_pairs, real_distances,K,RT):
     plt.title('Comparison of Estimated Distances and Errors')
     plt.legend()
     average_error = np.mean(errors)
-    # 添加平均误差的注释
+
     plt.annotate(f'Average Error: {average_error:.3f} m', xy=(0.5, 0.5), xycoords='axes fraction',
                  horizontalalignment='center', verticalalignment='center', fontsize=12, color='purple')
 
