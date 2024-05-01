@@ -834,15 +834,7 @@ class VideoTracker:
                     self.display_thread_running = False
                     break
 
-                # if not self.image_display_queue.full():
-                #     # 如果队列未满，直接放入新帧
-                #     self.image_display_queue.put_nowait(self.im0_s)
-                # else:
-                #     # 如果队列已满，先出队一个元素，再入队新帧
-                #     # 这一步确保队列中总是有最新的帧，避免重复显示同一帧
-                #     self.image_display_queue.get_nowait()  # 出队一个旧帧
-                #     self.image_display_queue.put_nowait(self.im0_s)  # 入队一个新帧
-                # self.image_display()
+
 
                 # 视频保存
                 if self.save_vid:
