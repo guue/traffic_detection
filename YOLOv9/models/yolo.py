@@ -5,6 +5,8 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
+from ultralytics.utils import colorstr
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLO root directory
 if str(ROOT) not in sys.path:
@@ -12,13 +14,13 @@ if str(ROOT) not in sys.path:
 if platform.system() != 'Windows':
     ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from models.common import *
-from models.experimental import *
-from utils.general import LOGGER, check_version, check_yaml, make_divisible, print_args
-from utils.plots import feature_visualization
-from utils.torch_utils import (fuse_conv_and_bn, initialize_weights, model_info, profile, scale_img, select_device,
+from YOLOv9.models.common import *
+from YOLOv9.models.experimental import *
+from YOLOv9.utils.general import LOGGER, check_version, check_yaml, make_divisible, print_args
+from YOLOv9.utils.plots import feature_visualization
+from YOLOv9.utils.torch_utils import (fuse_conv_and_bn, initialize_weights, model_info, profile, scale_img, select_device,
                                time_sync)
-from utils.tal.anchor_generator import make_anchors, dist2bbox
+from YOLOv9.utils.tal.anchor_generator import make_anchors, dist2bbox
 
 try:
     import thop  # for FLOPs computation
@@ -686,6 +688,11 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
 
+            if m in (RepNCSPELAN4,):
+                args[1] = make_divisible(args[1] * gw, 8)
+                args[2] = make_divisible(args[2] * gw, 8)
+                args[3] = max(round(args[3] * gd), 1) if n > 1 else n
+
             args = [c1, c2, *args[1:]]
             if m in {BottleneckCSP, SPPCSPC}:
                 args.insert(2, n)  # number of repeats
@@ -694,12 +701,14 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
+        elif m in (DySample,):
+            args.insert(0, ch[f])
         elif m is Shortcut:
             c2 = ch[f[0]]
         elif m is ReOrg:
             c2 = ch[f] * 4
         elif m is CBLinear:
-            c2 = args[0]
+            c2 = [int(x * gw) for x in args[0]]
             c1 = ch[f]
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
@@ -733,7 +742,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolo.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='YOLOv9/models/detect/yolov9_dysample.yaml', help='model.yaml')
     parser.add_argument('--batch-size', type=int, default=1, help='total batch size for all GPUs')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_true', help='profile model speed')

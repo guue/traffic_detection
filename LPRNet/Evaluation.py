@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
     lprnet = LPRNet(class_num=len(CHARS), dropout_rate=args.dropout_rate)
     lprnet.to(device)
-    lprnet.load_state_dict(torch.load('weights/lprnet_93.12._model.pth', map_location=lambda storage, loc: storage))
+    lprnet.load_state_dict(torch.load('LPRNet/weights/lprnet_92.94_model.pth', map_location=lambda storage, loc: storage))
 #    checkpoint = torch.load('saving_ckpt/lprnet_Iter_023400_model.ckpt')
 #    lprnet.load_state_dict(checkpoint['net_state_dict'])
     lprnet.eval() 
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     
     STN = STNet()
     STN.to(device)
-    STN.load_state_dict(torch.load('weights/stn_93.12_model.pth', map_location=lambda storage, loc: storage))
+    STN.load_state_dict(torch.load('LPRNet/weights/stn_92.94_model.pth', map_location=lambda storage, loc: storage))
 #    checkpoint = torch.load('saving_ckpt/stn_Iter_023400_model.ckpt')
 #    STN.load_state_dict(checkpoint['net_state_dict'])
     STN.eval()

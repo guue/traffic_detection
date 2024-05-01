@@ -104,14 +104,14 @@ class Licence(object):
     def __init__(self):
         super().__init__()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.yolo_model = 'weights/licence_yolov8.pt'
+        self.yolo_model = r'weights/yolov8n+mobilenet-lpr.pt'
         self.STN = STNet()
         self.STN.to(self.device)
-        self.STN.load_state_dict(torch.load('weights/stn_93.12_model.pth', map_location=lambda storage, loc: storage))
+        self.STN.load_state_dict(torch.load('weights/stn_92.94_model.pth', map_location=lambda storage, loc: storage))
         self.STN.eval()
         self.lprnet = LPRNet(class_num=len(CHARS), dropout_rate=0)
         self.lprnet.to(self.device)
-        self.lprnet.load_state_dict(torch.load('weights/lprnet_93.12._model.pth', map_location=lambda storage, loc: storage))
+        self.lprnet.load_state_dict(torch.load('weights/lprnet_92.94_model.pth', map_location=lambda storage, loc: storage))
         self.lprnet.eval()
         self.CHARS = ['京', '沪', '津', '渝', '冀', '晋', '蒙', '辽', '吉', '黑',
         '苏', '浙', '皖', '闽', '赣', '鲁', '豫', '鄂', '湘', '粤',
@@ -164,6 +164,17 @@ class Licence(object):
         
         return labels, np.array(pred_labels)
 
+    def detect_plate_color(self, plate_image):
+        # 使用颜色检测算法确定车牌颜色
+        # 这里是一个简单的示例，实际应用中需要根据具体情况设计颜色检测算法
+        hsv = cv2.cvtColor(plate_image, cv2.COLOR_BGR2HSV)
+        mask_blue = cv2.inRange(hsv, (100, 150, 0), (140, 255, 255))
+        mask_green = cv2.inRange(hsv, (50, 100, 100), (70, 255, 255))
+        if np.sum(mask_blue) > np.sum(mask_green):
+            return 'blue'
+        else:
+            return 'green'
+
     def detectLicence(self, img):
         # 检查并转换图像通道数
         if img.shape[2] == 4:  # 如果图像是4通道的
@@ -177,6 +188,8 @@ class Licence(object):
             detection_confidence = obj[4]  # YOLO检测置信度
 
             img_box = img[top:bottom, left:right]
+            plate_color=self.detect_plate_color(img_box)
+
             if img_box is None:
                 continue
 
@@ -199,7 +212,13 @@ class Licence(object):
             final_confidence = (detection_confidence + average_pred_conf) / 2
 
             labels, pred_labels = self.decode(preds.cpu().detach().numpy(), self.CHARS)
-            if re.match(r'^[\u4e00-\u9fa5][A-Za-z0-9]{6,7}$', labels[0]) is not None:
+
+            if plate_color == 'blue':
+                regex_pattern = r'^[\u4e00-\u9fa5][A-Za-z0-9]{6}$'  # 蓝牌: 1个汉字 + 6个字母数字
+            elif plate_color == 'green':
+                regex_pattern = r'^[\u4e00-\u9fa5][A-Za-z0-9]{7}$'  # 绿牌: 1个汉字 + 7个字母数字
+
+            if re.match(regex_pattern, labels[0]) is not None:
                 final_labels.append(labels[0])
                 final_confidences.append(final_confidence)
             else:
@@ -209,12 +228,17 @@ class Licence(object):
         # 假设选择置信度最高的车牌返回
         if final_confidences:  # 如果有识别到车牌
             max_conf_index = np.argmax(final_confidences)  # 获取最大置信度索引
-            return final_labels[max_conf_index], final_confidences[max_conf_index]
+            return final_labels[max_conf_index], final_confidences[max_conf_index],boxes
 
 if __name__=="__main__":
     lc=Licence()
-    image = cv2.imdecode(np.fromfile(r"D:\traffic_detection\ccpd\images\val\3056141493055555554-88_93-205&455_603&597-603&575_207&597_205&468_595&455-0_0_3_24_32_27_31_33-90-213.jpg", dtype=np.uint8), -1)
-    label,conf = lc.detectLicence(image)
+    image = cv2.imdecode(np.fromfile(r"img_3.png", dtype=np.uint8), -1)
+    label,conf,boxes = lc.detectLicence(image)
+    print(boxes[0])
+    plate_x1, plate_y1, plate_x2, plate_y2 = map(int, boxes[0][0:4])
+    cv2.rectangle(image, (plate_x1, plate_y1), (plate_x2, plate_y2), (0, 255, 0), 2)
+    cv2.imshow('z',image)
+    cv2.waitKey(0)
     print(label)
 
 

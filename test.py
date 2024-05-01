@@ -41,7 +41,6 @@ from strong_sort.utils.parser import get_config
 from strong_sort.strong_sort import StrongSORT
 
 from draw import *
-from zebra_detector.test import detect_zoo
 
 # 日志
 logger = logging.getLogger('detect')
@@ -114,6 +113,7 @@ def clear_directory(dir_path):
 
 class VideoTracker:
     def __init__(self, opt):
+        self.platelength_car = {}
         self.detection_thread = None
 
         self.is_running = False
@@ -315,40 +315,23 @@ class VideoTracker:
 
         return 'UP'
 
-    def license_plate_detection(self, input_queue, output_queue):
-        while True:
-            item = input_queue.get()
-            if item is None:  # None用来指示线程退出
-                break
-            id, image = item
+    def license_plate_detection_1(self, id, image):
 
-            # 检查车辆是否已经连续两次检测到相同的车牌，如果是，则跳过检测
-            if id in self.car_license_history and self.car_license_history[id][0] == self.car_license_history[id][1]:
-                output_queue.put((id, None))  # 使用None表示跳过检测
-                continue
-            detection_result = self.licence.detectLicence(image)
-            try:
-                label, conf = detection_result
-            except Exception as e:
-                logger.error(e)
-            # 更新车牌检测历史
-            if label != '':
-                if id not in self.car_license_history:
-                    self.car_license_history[id] = [label, None]
-                else:
-                    self.car_license_history[id] = [label, self.car_license_history[id][0]]
-            output_queue.put((id, detection_result))
+        detection_result = self.licence.detectLicence(image)
+        try:
+            label, conf, licence_boxes = detection_result
 
-    def zebra_detection_thread(self, input_queue, output_queue):
-        while True:
-            item = input_queue.get()  # 从队列中获取图像
-            if item is None:  # None表示接收到线程结束信号
-                output_queue.put(None)  # 确保主线程也能接收到结束信号
-                break
-            # 进行斑马线检测
-            image = item
-            detection_result = detect_zoo(image)
-            output_queue.put(detection_result)  # 将检测结果放入输出队列
+        except Exception as e:
+
+            label = ''
+        # 更新车牌检测历史
+        if label != '':
+            if id not in self.car_license_history:
+                self.car_license_history[id] = [label, None]
+            else:
+                self.car_license_history[id] = [label, self.car_license_history[id][0]]
+
+        return detection_result
 
     def image_detect(self, image):
         # Inference
@@ -511,12 +494,7 @@ class VideoTracker:
             last_record_time = video_start_time
             # 记录间隔，这里设置为2秒
             record_interval = timedelta(seconds=15)
-            self.license_thread = threading.Thread(
-                target=self.license_plate_detection,
-                args=(self.license_input_queue, self.license_output_queue))
-            # zebra_thread = threading.Thread(target=self.zebra_detection_thread,
-            #                                 args=(self.zebra_input_queue, self.zebra_output_queue))
-            self.license_thread.start()
+
             # zebra_thread.start()
             self.gpu_memory = {}
 
@@ -632,57 +610,86 @@ class VideoTracker:
                                         if id not in self.counted_ids:
                                             self.vehicle_count += 1
                                             self.counted_ids.add(id)  # 添加ID到已计数集合中
+                                        cardiection = self.calculate_direction_for_car(id)
 
                                         x1, y1, x2, y2 = int(bboxes[0]), int(bboxes[1]), int(bboxes[2]), int(bboxes[3])
                                         x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])  # 确保坐标是整数
-                                        if x2 > x1 and y2 > y1:  # 确保裁剪区域有效
+                                        if x2 > x1 and y2 > y1  and cardiection == 'UP':  # 确保裁剪区域有效
                                             cropped_image = im0s[y1:y2, x1:x2]
                                             if cropped_image.size > 0:  # 检查图像尺寸
-                                                self.license_input_queue.put((id, cropped_image))  # 将车牌图像放入车牌识别队列
+
+                                                re = self.license_plate_detection_1(id, cropped_image)
+                                                if re is not None:
+                                                    licence, conf, licence_boxes = re
+                                                    plate_x1, plate_y1, plate_x2, plate_y2 = map(int,
+                                                                                                 licence_boxes[0][0:4])
+                                                    orig_plate_x1 = x1 + plate_x1
+                                                    orig_plate_y1 = y1 + plate_y1
+                                                    orig_plate_x2 = x1 + plate_x2
+                                                    orig_plate_y2 = y1 + plate_y2
+                                                    plate_width = orig_plate_x2 - orig_plate_x1
+                                                    plate_box = [orig_plate_x1, orig_plate_y1, orig_plate_x2,
+                                                                 orig_plate_y2]
+                                                    logger.info(plate_box)
+                                                    annotator.box_label(plate_box, '', (0, 255, 0))
+                                                    self.platelength_car[id] = plate_width
+                                                    print(self.platelength_car)
+                                                    # 将车牌图像放入车牌识别队列
+                                                    if (id not in self.car_licence or conf >
+                                                        self.car_licence[id]['confidence']) and (licence != '') \
+                                                            and (id not in self.car_license_history or
+                                                                 self.car_license_history[id][0] !=
+                                                                 self.car_license_history[id][1]) \
+                                                            :
+                                                        # 更新车牌信息和置信度
+                                                        licence = list(licence)
+                                                        licence[0] = '鲁'
+                                                        licence = ''.join(licence)
+                                                        self.car_licence[id] = {'licence': licence,
+                                                                                'confidence': conf}
+
+
                                             else:
-                                                logger.warning("Invalid cropped image size.")
+                                                print(1)
                                         else:
-                                            logger.warning("Invalid crop coordinates.")
+                                            print(2)
 
                                         # 测速
 
-                                        cardiection = self.calculate_direction_for_car(id)
-
-                                        speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps)
-
-
-                                        if speed != None:
-                                            speed = round(speed, 1)
-                                            bbox_speed = str(speed) + "km/h"
-                                        else:
-                                            bbox_speed = ''
-                                        car_status_dict['speed'] = bbox_speed
+                                        # speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps)
+                                        #
+                                        # if speed != None:
+                                        #     speed = round(speed, 1)
+                                        #     bbox_speed = str(speed) + "km/h"
+                                        # else:
+                                        #     bbox_speed = ''
+                                        # car_status_dict['speed'] = bbox_speed
                                     # 车牌
-                                    while not self.license_output_queue.empty():
-                                        thread_id, license_detection_result = self.license_output_queue.get()
-                                        if license_detection_result is not None:
-                                            label_licence, label_conf = license_detection_result
-                                            # 检查是否已存在该车辆的车牌信息，且新识别的车牌置信度是否更高
-                                            if (thread_id not in self.car_licence or label_conf >
-                                                self.car_licence[thread_id][
-                                                    'confidence']) and label_licence != '':
-                                                # 更新车牌信息和置信度
-                                                label_licence = list(label_licence)
-                                                label_licence[0] = '鲁'
-                                                label_licence = ''.join(label_licence)
-                                                self.car_licence[thread_id] = {'licence': label_licence,
-                                                                               'confidence': label_conf}
+                                    # while not self.license_output_queue.empty():
+                                    #     thread_id, license_detection_result = self.license_output_queue.get()
+                                    #     if license_detection_result is not None:
+                                    #         label_licence, label_conf = license_detection_result
+                                    #         # 检查是否已存在该车辆的车牌信息，且新识别的车牌置信度是否更高
+                                    #         if (thread_id not in self.car_licence or label_conf >
+                                    #             self.car_licence[thread_id][
+                                    #                 'confidence']) and label_licence != '':
+                                    #             # 更新车牌信息和置信度
+                                    #             label_licence = list(label_licence)
+                                    #             label_licence[0] = '鲁'
+                                    #             label_licence = ''.join(label_licence)
+                                    #             self.car_licence[thread_id] = {'licence': label_licence,
+                                    #                                            'confidence': label_conf}
                                     # 超速处理
-                                    if SpeedOverFlag and self.names[int(cls)] in ['car', 'bus', 'truck']:
-                                        car_status_dict['illegal'] = True
-                                        car_status_dict['illegal_behavior'].append('超速')
-                                        if id is not None:
-                                            save_one_box(torch.Tensor(bboxes), imc,
-                                                         file=self.save_dir / 'speedover' /
-                                                               f'{int(id)}.jpg',
-                                                         BGR=True)
-                                    if id in self.car_licence:
-                                        car_status_dict['licence'] = self.car_licence[id]['licence']
+                                    # if SpeedOverFlag and self.names[int(cls)] in ['car', 'bus', 'truck']:
+                                    #     car_status_dict['illegal'] = True
+                                    #     car_status_dict['illegal_behavior'].append('超速')
+                                    #     if id is not None:
+                                    #         save_one_box(torch.Tensor(bboxes), imc,
+                                    #                      file=self.save_dir / 'speedover' /
+                                    #                           f'{int(id)}.jpg',
+                                    #                      BGR=True)
+                                    # if id in self.car_licence:
+                                    #     car_status_dict['licence'] = self.car_licence[id]['licence']
 
                                     # 没啥用 暂时留着 后续没用就删
                                     if self.save_txt:
@@ -695,8 +702,8 @@ class VideoTracker:
                                         with open(txt_path + '.txt', 'a') as f:
                                             f.write(
                                                 ('%g ' * 12 + '\n') % (
-                                                frame + 1, id, conf, cls, bbox_left,  # MOT format
-                                                bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
+                                                    frame + 1, id, conf, cls, bbox_left,  # MOT format
+                                                    bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
                                     # 图像检测信息框绘制
                                     if self.save_vid or self.show_vid:  # Add bbox to image
                                         c = int(cls)  # integer class
@@ -704,7 +711,7 @@ class VideoTracker:
                                         if self.names[c] in ['car', 'bus', 'truck']:
                                             label = None if self.hide_labels else (
                                                 f' {self.names[c]}')
-                                            label += f" {bbox_speed}  "
+                                            label += f"  {cardiection} "
                                             if id in self.car_licence:
                                                 label += f"{self.car_licence[id]['licence']}"
                                         else:
@@ -719,7 +726,7 @@ class VideoTracker:
 
                         else:
                             self.strongsort_list[i].increment_ages()
-                            logger.warning('No detections')
+
 
                         # 更新上一帧图片
                         prev_frames[i] = curr_frames[i]
@@ -754,7 +761,7 @@ class VideoTracker:
                         handles = pynvml.nvmlDeviceGetHandleByIndex(0)  # 0表示显卡标号
                         meminfo = pynvml.nvmlDeviceGetMemoryInfo(handles)
                         self.gpu_memory[(current_time - video_start_time).seconds] = meminfo.used / 1024 ** 3
-                        logger.info(f"\n显存占用:{meminfo.used / 1024 ** 3}g\n")  # 已用显存大小
+
                         frame_end_time = time.time()
                         print(f"Processing time for {frame_count}: {frame_end_time - frame_start_time:.2f} seconds")
 
@@ -794,9 +801,6 @@ class VideoTracker:
         # 循环结束后，确保释放资源
         if self.vid_writer:
             self.vid_writer.release()
-        self.license_input_queue.put(None)  # 发送停止信号
-        self.zebra_input_queue.put(None)
-        self.license_thread.join()
         cv2.destroyAllWindows()
 
         # 统计
@@ -809,7 +813,7 @@ class VideoTracker:
         self.plot_counts(self.gpu_memory, (str(self.save_dir) + '/' + 'gpu memory count'), 'gpu memory', 'time')
         if self.save_txt or self.save_vid:
             s = f"\n{len(list(self.save_dir.glob('labels/*.txt')))} tracks saved to {self.save_dir / 'labels'}" if self.save_txt else ''
-            logger.info(f"Results saved to {colorstr('bold', self.save_dir)}{s}")
+
 
     def start_detection(self):
         # 在独立线程中启动检测过程
@@ -833,7 +837,7 @@ def parse_opt():
                         help='model.pt path(s)')
     parser.add_argument('--strong-sort-weights', type=str, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
     parser.add_argument('--config-strongsort', type=str, default='strong_sort/configs/strong_sort.yaml')
-    parser.add_argument('--source', type=str, default='video_10s.mp4', help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--source', type=str, default='VID20240425144841.mp4', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.35, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
@@ -882,7 +886,7 @@ def main(opt):
             # logger.info(f"Current class counts: {class_counts}")
             # logger.info(f"Current vehicle count: {vehicle_count}")
     except Exception as e:
-        logger.error(e)
+        pass
 
 
 if __name__ == "__main__":

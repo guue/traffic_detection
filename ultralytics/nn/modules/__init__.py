@@ -46,6 +46,9 @@ from .block import (
     CBFuse,
     CBLinear,
     Silence,
+    stem,
+    FusedMBConv,
+    MBConv,
 )
 from .conv import (
     CBAM,
@@ -135,4 +138,7 @@ __all__ = (
     "CBFuse",
     "CBLinear",
     "Silence",
+    "stem",
+    "FusedMBConv",
+    "MBConv",
 )

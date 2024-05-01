@@ -1,7 +1,7 @@
 import os
-_txt=r'D:\Yolov7_StrongSORT\yolov7\mydata\train\labels'
-_txt1=r'D:\Yolov7_StrongSORT\yolov7\mydata\val\labels'
-_txt2=r'D:\Yolov7_StrongSORT\yolov7\mydata\test\labels'
+_txt=r'YOLOv9/dataset_car/train/labels'
+_txt1=r'YOLOv9/dataset_car/val/labels'
+_txt2=r'YOLOv9/dataset_car/test/labels'
 class_=[] #存放所有类别的数组
 print("-----------------------训练集---------------------")
 for txt in os.listdir(_txt):
@@ -10,7 +10,7 @@ for txt in os.listdir(_txt):
         for line in f:
             colums=line.strip().split()
             class_.append(int(colums[0]))
-for i in range(0,12):
+for i in range(0,4):
     t=class_.count(i)
 
     print(f'第{i}类总数{t}')
@@ -22,8 +22,11 @@ for txt in os.listdir(_txt1):
     with open(txt1_src,'r') as f:
         for line in f:
             colums=line.strip().split()
+            if int(colums[0])==2:
+                print(txt1_src)
             class_val.append(int(colums[0]))
-for i in range(0,12):
+for i in range(0,4):
+
     t=class_val.count(i)
 
     print(f'第{i}类总数{t}')
@@ -36,7 +39,7 @@ for txt in os.listdir(_txt2):
         for line in f:
             colums=line.strip().split()
             class_test.append(int(colums[0]))
-for i in range(0,12):
+for i in range(0,4):
     t=class_test.count(i)
 
     print(f'第{i}类总数{t}')

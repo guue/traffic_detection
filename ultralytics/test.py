@@ -1,5 +1,7 @@
 import cv2
 import torch
+
+from ccpd.data2coco import random_color
 from ultralytics.utils.torch_utils import select_device
 
 from ultralytics import YOLO
@@ -39,22 +41,25 @@ from ultralytics import YOLO
 def predict(model_path, img):
     model = YOLO(model_path)
     device = select_device('')
-    # metrics = model.val()  # evaluate model performance on the validation set
+    # metrics = model.val(batch=1)  # evaluate model performance on the validation set
 
     results = model.predict(img,device=device)[0]
     names = results.names
     boxes = results.boxes.data.tolist()
 
     # for obj in boxes:
-    #     left, top, right, bottom = int(obj[0]), int(obj[1]), int(obj[2]), int(obj[3])
+    #     x1, y1, x2, y2 = int(obj[0]), int(obj[1]), int(obj[2]), int(obj[3])
     #     confidence = obj[4]
     #     label = int(obj[5])
-    #     color = random_color(label)
-    #     cv2.rectangle(img, (left, top), (right, bottom), color=color, thickness=2, lineType=cv2.LINE_AA)
-    #     caption = f"{names[label]} {confidence:.2f}"
+    #     cropped_image = img[y1:y2, x1:x2]
+    #     cv2.imwrite(f'licence_pci]/label/{x1}.jpg',cropped_image)
+
+
     # w, h = cv2.getTextSize(caption, 0, 1, 2)[0]
     # cv2.rectangle(img, (left - 3, top - 33), (left + w + 10, top), color, -1)
-
+    # cv2.imshow('a',img)
+    # cv2.waitKey(0)
+    #
     # cropped_image = img[top:bottom,left:right]
     # print(caption)
 
@@ -62,8 +67,8 @@ def predict(model_path, img):
 
 
 if __name__ == '__main__':
-    model_path = 'weights/licence_yolov8.pt'
+    model_path = 'ultralytics/runs/detect/train8/weights/best.pt'
     img = cv2.imread(
-        r'D:\traffic_detection\ccpd\images\val\3047552083333333335-88_98-138&431_470&575-458&558_138&575_144&432_470&431-0_0_3_24_32_29_30_25-106-198.jpg')
+        r'img_3.png')
     BOXES=predict(model_path, img)
     print(BOXES)

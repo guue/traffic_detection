@@ -1,6 +1,6 @@
-train: D:\Dataset\All\CarDetection\VOCData\VOCdevkit\Dataset\images\train
-val: D:\Dataset\All\CarDetection\VOCData\VOCdevkit\Dataset\images\val
-test: D:\Dataset\All\CarDetection\VOCData\VOCdevkit\Dataset\images\test
+train: dataset_car/train
+val: dataset_car/val
+test: dataset_car/test
 
 nc: 4
 names: ['car', 'van', 'others', 'bus']

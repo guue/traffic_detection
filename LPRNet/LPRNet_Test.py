@@ -68,18 +68,18 @@ if __name__ == '__main__':
 
     lprnet = LPRNet(class_num=len(CHARS), dropout_rate=0)
     lprnet.to(device)
-    lprnet.load_state_dict(torch.load('weights/lprnet_93.12._model.pth', map_location=lambda storage, loc: storage))
+    lprnet.load_state_dict(torch.load('weights/lprnet_92.94_model.pth', map_location=lambda storage, loc: storage))
     lprnet.eval()
 
     STN = STNet()
     STN.to(device)
-    STN.load_state_dict(torch.load('weights/stn_93.12_model.pth', map_location=lambda storage, loc: storage))
+    STN.load_state_dict(torch.load('weights/stn_92.94_model.pth', map_location=lambda storage, loc: storage))
     STN.eval()
 
     print("Successful to build network!")
 
     since = time.time()
-    image = cv2.imdecode(np.fromfile(r"D:\traffic_detection\LPRNet\data\validation\苏AD39591.jpg", dtype=np.uint8), -1)
+    image = cv2.imdecode(np.fromfile(r"LPRNet/data/train/京BD11637.jpg", dtype=np.uint8), -1)
     if image.shape[2] == 4:  # 如果图像是4通道的
         image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)  # 将图像从BGRA转换为BGR
 
@@ -92,6 +92,7 @@ if __name__ == '__main__':
     preds = preds.cpu().detach().numpy()  # (1, 68, 18)
 
     labels, pred_labels = decode(preds, CHARS)
+    print(labels[0])
     print("model inference in {:2.3f} seconds".format(time.time() - since))
 
     img = cv2ImgAddText(image, labels[0], (0, 0))

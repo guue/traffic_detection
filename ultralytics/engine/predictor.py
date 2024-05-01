@@ -208,8 +208,8 @@ class BasePredictor:
     @smart_inference_mode()
     def stream_inference(self, source=None, model=None, *args, **kwargs):
         """Streams real-time inference on camera feed and saves results to file."""
-        # if self.args.verbose:
-        #     LOGGER.info("")
+        if self.args.verbose:
+            LOGGER.info("")
 
         # Setup model
         if not self.model:
