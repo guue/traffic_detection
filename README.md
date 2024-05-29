@@ -102,8 +102,6 @@ $ python detect_v9.py --source .....
 **实时图片**
 前端可直接读入**self.image_display_queue** 此队列里的图片进行显示
 
-## 设想
-高清摄像头 可以适配 人脸检测（应用于违规抓拍后的识别） 驾驶员行为检测（玩手机 喝水等等）  可以在主界面跳转两个系统 应用在不同摄像头以及道路上 更具有实际意义
 
 ## 2024/4/3 
 update:
@@ -194,56 +192,7 @@ update:
                                                   subsampling=0)  # save RGB
 ```
 
-修改测速、方向、更新信息等多个函数
-## 测速实现
-首先使用提前设定好的车辆真实值与检测值的比例求几何平均 防止宽度和长度单一值受摄像头距离影响，同时对不同车型的真实长宽值设定不同的值
 
-**不再使用前后两帧进行测速**，而是选取**最多十帧**的距离求**平均**速度
-```python
-
-    def calculate_average_speed(self, car_id, fps, flag=0):
-        # 确保车辆位置历史中有足够的数据
-        if car_id not in self.car_locations_history or len(self.car_locations_history[car_id]) < 2:
-            return None, False
-        # 获取车辆的位置和尺寸历史
-        locations_sizes = self.car_locations_history[car_id]
-        # 选择一个预设的车辆尺寸（以米为单位）
-        actual_length = 4.5  # 车辆长度，单位为米
-        actual_width = 1.8  # 车辆宽度，单位为米
-        # 计算总移动距离（像素）
-        total_pixel_distance = 0.0
-        for i in range(1, len(locations_sizes)):
-            prev_location, prev_size = locations_sizes[i - 1][1], locations_sizes[i - 1][2]
-            current_location, current_size = locations_sizes[i][1], locations_sizes[i][2]
-            pixel_distance = math.sqrt(
-                (current_location[0] - prev_location[0]) ** 2 + (current_location[1] - prev_location[1]) ** 2)
-            total_pixel_distance += pixel_distance
-        # 获取最新的车辆尺寸（像素）
-        _, _, current_size = locations_sizes[-1]
-        pixel_width, pixel_height = current_size
-        # 摄像头为倾斜角 取几何平均值做真实距离映射
-        dpix = math.sqrt((actual_length / pixel_height) * (actual_width / pixel_width)) 
-        # 计算总移动距离（米）
-        total_real_distance = total_pixel_distance * dpix
-        # 计算总时间（秒）
-        total_time_seconds = (locations_sizes[-1][0] - locations_sizes[0][0]) / fps
-        # 计算平均速度（km/h）
-        average_speed_kmh = (total_real_distance / total_time_seconds) * 3.6
-        # 检测是否超速
-        SpeedOver = average_speed_kmh > 50  # 假定超过40km/h为超速
-        return average_speed_kmh, SpeedOver
-    
-    if self.names[int(cls)] == 'bus':
-        speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps,
-                                                            actual_length=8,
-                                                            actual_width=2.4)
-    elif self.names[int(cls)] == 'truck':
-        speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps,
-                                                            actual_length=6.2,
-                                                            actual_width=2.4)
-    else:
-        speed, SpeedOverFlag = self.calculate_average_speed(id, self.fps)
-```
 ## 车牌识别
 通过**Yolov8**定位车牌目标位置 **LPRNET**对车牌字符进行识别
 
@@ -276,8 +225,7 @@ update:
                         box = [399,494,1456,640]
                         annotator.box_label(box,'zoo_crossing',(0,255,0))
 ```
-## 想实现的
-将距离的远近做成**热力图**形式，车辆周边一个距离没有其他车辆标绿 有车辆标黄 重叠标红
+
 
 功能上：
 
