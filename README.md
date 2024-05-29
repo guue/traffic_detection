@@ -2,7 +2,7 @@
 
 ## Before you run the tracker
 
-安装依赖库，确保python>3.8 （尽量用3.8版本 不要高版本）
+安装依赖库，确保python>=3.8 （尽量用3.8版本 不要高版本）
 
 如果没有cuda先去安装cuda
 
@@ -226,9 +226,6 @@ update:
                         annotator.box_label(box,'zoo_crossing',(0,255,0))
 ```
 
+## 测速更新
+利用消失点估算外参矩阵 用matlab得到内参矩阵 最后得到世界坐标
 
-功能上：
-
-压实线检测
-
-闯红灯检测
